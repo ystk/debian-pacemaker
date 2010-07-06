@@ -1,0 +1,12 @@
+Makefile
+Makefile.in
+.libs
+*.la
+*.lo
+cib
+cibpipe
+cibmon
+.deps
+*.beam
+parser-messages
+MISC_ERRORS

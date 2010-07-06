@@ -1,0 +1,13 @@
+Makefile
+Makefile.in
+.libs
+pengine
+ptest
+.deps
+.gres.*
+*.beam
+parser-messages
+MISC_ERRORS
+*.lo
+libpengine.la
+

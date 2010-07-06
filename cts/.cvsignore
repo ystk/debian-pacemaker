@@ -1,0 +1,15 @@
+Makefile.in
+Makefile
+.*.swp
+*.pyc
+CTSvars.py
+*.out
+local5
+local6
+local7
+*.beam
+parser-messages
+MISC_ERRORS
+OCFMSDummy
+LSBDummy
+getpeinputs.sh
