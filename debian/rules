@@ -14,7 +14,7 @@
 # However, there is a long standing bug with installing ssh
 # on arm in debian and this is preventing heartbeat from
 # moving into sarge. By adding this we can remove the build
-# dependancy on ssh and get an updated heartbeat into sarge... 
+# dependency on ssh and get an updated heartbeat into sarge... 
 # I hope. Horms 26th July 2004
 #
 # If this is removed then the build depandancy on ssh should be
@@ -45,6 +45,11 @@ ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
        INSTALL_PROGRAM += -s
 endif
 
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+  NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+  MAKEFLAGS += -j$(NUMJOBS)
+endif
+
 RELEASE := $(shell dpkg-parsechangelog | awk '/^Version: / { print $$2 }')
 UPSTREAM := $(shell echo "$(RELEASE)" | sed 's/:\?\([0-9\.]\+\)-[0-9].*/\1/')
 ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
@@ -72,21 +77,22 @@ build-stamp:
 clean:
 	dh_testdir
 	dh_testroot
-
+	
+	[ ! -f Makefile ] || $(MAKE) clean
 	rm -f tools/ccdv
 	rm -f libltdl.tar autoconf automake autoheader
 	rm -f build-stamp
 	rm -f debian/*.files debian/*.dirs
-
+	
 	rm -rf debian/*-build-*
 	rm -rf debian/tmp-*
-
+	
 	## Zero autoconf foo
-	-rm -f config.status libltdl/config.log libltdl/config.status 
-
+	rm -f config.status libltdl/config.log libltdl/config.status 
+	
 	# do a make changes
-	make changes || true
-
+	# make changes || true <-- WTF???
+	
 	dh_clean
 
 install: build install-stamp
@@ -101,11 +107,9 @@ binary-indep: build install
 binary-arch: build install
 	dh_testdir -a
 	dh_testroot -a
+
+	dh_install --sourcedir=debian/tmp --fail-missing
 	
-	dh_install --sourcedir=debian/tmp --list-missing
-
-	mkdir -p `pwd`/debian/pacemaker/usr/share/doc/pacemaker/templates/
-
 	# make non-scripts non-executable
 	-chmod -x `pwd`/debian/pacemaker/usr/share/pacemaker/crm-transitional.dtd
 	-chmod -x `pwd`/debian/pacemaker/usr/share/pacemaker/resources-1.0.rng
@@ -119,11 +123,12 @@ binary-arch: build install
 	-chmod -x `pwd`/debian/pacemaker/usr/share/pacemaker/score.rng
 	-chmod -x `pwd`/debian/pacemaker/usr/share/pacemaker/crm.dtd
 	-chmod -x `pwd`/debian/pacemaker/usr/share/pacemaker/rule-1.0.rng
-
+	
 	# delete redundant COPYING files
-	rm -rf `pwd`/debian/pacemaker/usr/share/doc/pacemaker/COPYING.LGPL.gz
-	rm -rf `pwd`/debian/pacemaker/usr/share/doc/pacemaker/COPYING.gz
-
+	rm -rf debian/pacemaker/usr/share/doc/pacemaker/COPYING.LGPL
+	rm -rf debian/pacemaker/usr/share/doc/pacemaker/COPYING.LIB
+	rm -rf debian/pacemaker/usr/share/doc/pacemaker/COPYING
+	
 	# create special directory
 	mkdir -p `pwd`/debian/pacemaker/var/lib/pengine
 	mkdir -p `pwd`/debian/pacemaker/var/lib/heartbeat/pengine
@@ -133,20 +138,20 @@ binary-arch: build install
 	dh_installexamples -a
 	dh_installinit -a -n -u 'defaults 20 32'
 	dh_installman -a
+	dh_lintian
 	dh_installchangelogs
 	dh_link -a
 	dh_strip -a
-
+	
 	# make the pacemaker shlib non-executable
 	chmod -x `pwd`/debian/pacemaker/usr/lib/lcrso/pacemaker.lcrso
-
+	
 	dh_compress -a
 	dh_fixperms -a
 	dh_makeshlibs -a -V
-	dh_installdeb -a
 	dh_perl -a
-	dh_pycentral -a
-	dh_python -a `pwd`/usr/lib/pacemaker/cts `pwd`/usr/lib/pacemaker
+	DH_PYCENTRAL="include-links" dh_pycentral -a
+	dh_installdeb -a
 	dh_shlibdeps -a
 	dh_gencontrol -a
 	dh_md5sums -a

@@ -1,0 +1,27 @@
+Description: Remove the debian directory from autotools handling.
+Author: Frederik Schüler <fs@debian.org>
+Last-Update: 2010-03-02
+
+diff -ruN pacemaker-1.0.7+hg15404.orig/Makefile.am pacemaker-1.0.7+hg15404/Makefile.am
+--- pacemaker-1.0.7+hg15404.orig/Makefile.am	2010-03-01 17:46:34.000000000 +0000
++++ pacemaker-1.0.7+hg15404/Makefile.am	2010-03-03 08:09:36.948369427 +0000
+@@ -23,7 +23,7 @@
+ MAINTAINERCLEANFILES    = Makefile.in aclocal.m4 configure DRF/config-h.in \
+                         DRF/stamp-h.in libtool.m4 ltdl.m4 libltdl.tar
+ 
+-SUBDIRS	= debian $(LIBLTDL_DIR) replace include lib pengine cib crmd fencing tools shell xml cts extra doc
++SUBDIRS	= $(LIBLTDL_DIR) replace include lib pengine cib crmd fencing tools shell xml cts extra doc
+ 
+ doc_DATA = AUTHORS COPYING COPYING.LIB
+ 
+diff -ruN pacemaker-1.0.7+hg15404.orig/configure.ac pacemaker-1.0.7+hg15404/configure.ac
+--- pacemaker-1.0.7+hg15404.orig/configure.ac	2010-03-01 17:46:34.000000000 +0000
++++ pacemaker-1.0.7+hg15404/configure.ac	2010-03-03 08:09:22.463811309 +0000
+@@ -1418,7 +1418,6 @@
+ cib/Makefile							\
+ crmd/Makefile							\
+ pengine/Makefile						\
+-debian/Makefile							\
+ doc/Makefile							\
+ 	doc/cibadmin.8						\
+ 	doc/crm_resource.8					\

@@ -1,3 +1,126 @@
+pacemaker (1.0.9.1+hg15626-1) unstable; urgency=low
+
+  * New upstream Mercurial checkout to fix the "cleanup" command 
+
+ -- Martin Loschwitz <madkiss@debian.org>  Thu, 05 Aug 2010 13:24:45 +0000
+
+pacemaker (1.0.9.1-2) unstable; urgency=low
+
+  * Rebuild against fresh cluster-glue
+    - Updated dependencies
+  * Update debian/watch
+  * Add dependencies on libglib2.0-dev, libxml2-dev and libcluster-glue-dev
+    to pacemaker-dev.
+    Closes: #586787
+  * Update standards version to 3.9.0
+
+ -- Simon Horman <horms@debian.org>  Wed, 14 Jul 2010 17:06:02 +0900
+
+pacemaker (1.0.9.1-1) unstable; urgency=low
+
+  * New Upstream
+
+ -- Simon Horman <horms@debian.org>  Mon, 05 Jul 2010 22:01:05 +0900
+
+pacemaker (1.0.8+hg15494-4) unstable; urgency=low
+
+  * run dh_installdeb *after* dh_perl and dh_pycentral.
+
+ -- Frederik Schüler <fs@debian.org>  Mon, 03 May 2010 20:10:48 +0200
+
+pacemaker (1.0.8+hg15494-3) unstable; urgency=low
+
+  * Merge 1.0.8+hg15494-2ubuntu1
+    debian/pacemaker-dev.install: Changed 'python2.5/site-packages' to
+    'python*/*-packages'.
+    debian/control:
+    - Add missing Build-Depends on libcluster-glue-dev.
+    - Drop unnecessary Build-Depends on python-dev.
+  * Build depend on libcluster-glue-dev
+    Patch by Nobuhiro Iwamatsu
+    Closes: 578340
+
+ -- Anibal Monsalve Salazar <anibal@debian.org>  Wed, 21 Apr 2010 16:10:25 +1000
+
+pacemaker (1.0.8+hg15494-2) unstable; urgency=low
+
+  * Fix support of python file handling for CRM shell 
+
+ -- Martin Loschwitz <madkiss@debian.org>  Tue, 30 Mar 2010 15:07:48 +0000
+
+pacemaker (1.0.8+hg15494-1) unstable; urgency=low
+
+  * Build new packages for upload to official unstable repository
+  * Base build on new cluster-glue and heartbeat 
+  * Removed spelling fixes patch; merged upstream.
+  * Drop obsolete Build-Dependency on libnet1-dev
+
+ -- Martin Loschwitz <madkiss@debian.org>  Tue, 30 Mar 2010 09:09:11 +0000
+
+pacemaker (1.0.8-1) unstable; urgency=low
+
+  [ Simon Horman ]
+  * New Upstream
+
+ -- Simon Horman <horms@debian.org>  Fri, 26 Mar 2010 21:02:28 +1100
+
+pacemaker (1.0.7+hg20100303r15404-3) unstable; urgency=low
+
+  [ Martin Loschwitz ]
+  * Fixing the CRM shell finally
+
+ -- Martin Loschwitz <madkiss@debian.org>  Wed, 03 Mar 2010 18:16:00 +0100
+
+pacemaker (1.0.7+hg20100303r15404-2) unstable; urgency=low
+
+  [ Martin Loschwitz ]
+  * Fix inclusion of files for the CRM shell
+  * Include two manpages in pacemaker package
+
+ -- Martin Loschwitz <madkiss@debian.org>  Wed, 03 Mar 2010 15:33:00 +0100
+
+pacemaker (1.0.7+hg20100303r15404-1) unstable; urgency=low
+
+  [ Martin Loschwitz ]
+  * Update the copyright-file to the version updated by Ante Karamatic
+  * Remove the Build-Dependency on heartbeat-dev (obsolete)
+  * Add Build-Dependency on libcluster-glue-dev
+  * New upstream checkout; officially ready for unstable
+
+ -- Martin Loschwitz <madkiss@debian.org>  Wed, 03 Mar 2010 09:00:00 +0100
+
+pacemaker (1.0.7+hg20100203-2) UNRELEASED; urgency=low
+
+  * Use debian source format 3.0 "quilt".
+  * Raise debconf compatibility level to 7, and depend on this version 
+    accordingly.
+  * Bump standars version to 3.8.4, no changes needed.
+  * Remove duplicate control fields.
+  * Add lintian overrides.
+  * debian/rules: fix indentations.
+  * Install manpages using dh_installman.
+
+ -- Frederik Schüler <fs@debian.org>  Thu, 11 Feb 2010 23:45:25 +0100
+
+pacemaker (1.0.7+hg20100203-1) unstable; urgency=low
+
+  * Rebuild against the new cluster stack releases
+
+ -- Martin Loschwitz <madkiss@debian.org>  Wed, 03 Feb 2010 08:30:00 +0100
+
+pacemaker (1.0.7+hg20100127-0test1) unstable; urgency=low
+
+  * New upstream version
+
+ -- Martin Loschwitz <madkiss@debian.org>  Wed, 27 Jan 2010 13:58:00 +0200
+
+pacemaker (1.0.6+hg20100105-0ubuntu0ppa1) lucid; urgency=low
+
+  * New upstream snapshot
+  * Fix version dep on heartbeat
+
+ -- Ante Karamatic <ivoks@ubuntu.com>  Wed, 06 Jan 2010 19:31:31 +0000
+
 pacemaker (1.0.6+hg20091102-4~bpo50+1) lenny-backports; urgency=low
 
   * Rebuild for lenny-backports.
@@ -83,7 +206,7 @@ pacemaker (1.0.3+svn20090522-1) experimental; urgency=low
 
 pacemaker (1.0.2-4) experimental; urgency=low
 
-  * Add missing build dependancy on libheartbeat2-dev 
+  * Add missing build dependency on libheartbeat2-dev 
 
  -- Simon Horman <horms@debian.org>  Wed, 20 May 2009 15:01:15 +0000
 

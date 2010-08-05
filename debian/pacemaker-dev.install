@@ -50,6 +50,9 @@ usr/lib/heartbeat/crm_primitive.pyc
 usr/lib/heartbeat/hb2openais-helper.pyc
 usr/lib/heartbeat/crm_primitive.pyo        
 usr/lib/heartbeat/hb2openais-helper.pyo
-usr/share/pacemaker/cts/*.pyo
-usr/share/pacemaker/cts/*.pyc
+usr/share/pacemaker/tests/cts/*.pyo
+usr/share/pacemaker/tests/cts/*.pyc
 usr/include/pacemaker/crm/common/mainloop.h
+usr/share/pacemaker/tests/*
+usr/lib/python*/*-packages/crm/*.pyo
+usr/lib/python*/*-packages/crm/*.pyc

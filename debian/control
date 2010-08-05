@@ -2,17 +2,17 @@ Source: pacemaker
 Section: admin
 Priority: optional
 Maintainer: Debian HA Maintainers <debian-ha-maintainers@lists.alioth.debian.org>
-Uploaders: Martin Loschwitz <madkiss@debian.org>, Anibal Monsalve Salazar <anibal@debian.org>, Simon Horman <horms@debian.org>
-Build-Depends: debhelper (>= 5), automake, autoconf, chrpath, libsnmp-dev, libglib2.0-dev, perl, net-tools, python, libnet1-dev, libtool, libcurl4-openssl-dev | libcurl3-openssl-dev, libxml2-dev, bison, flex, uuid-dev, libbz2-dev, zlib1g-dev, libltdl3-dev, openssh-client, libgnutls-dev, python-central (>= 0.5), python-dev, libpam0g-dev, libncurses5-dev, libcorosync-dev (>= 1.1.2), heartbeat-dev (>= 3.0.beta1+hg20090826), libheartbeat2-dev (>= 3.0.beta1+hg20090826), cluster-glue-dev (>= 1.0+hg20090821), libxslt1-dev, libesmtp-dev
-Standards-Version: 3.8.3
+Uploaders: Martin Loschwitz <madkiss@debian.org>, Anibal Monsalve Salazar <anibal@debian.org>, Simon Horman <horms@debian.org>, Frederik Schüler <fs@debian.org>
+Build-Depends: debhelper (>= 7), automake, autoconf, chrpath, libsnmp-dev, libglib2.0-dev, perl, net-tools, python, libtool, libcurl4-openssl-dev | libcurl3-openssl-dev, libxml2-dev, bison, flex, uuid-dev, libbz2-dev, zlib1g-dev, libltdl3-dev, openssh-client, libgnutls-dev, python-central (>= 0.5), python-dev, libpam0g-dev, libncurses5-dev, libcorosync-dev (>= 1.1.2), libheartbeat2-dev (>= 3.0), cluster-glue-dev (>= 1.0.6), libcluster-glue-dev (>= 1.0.6), libxslt1-dev, libesmtp-dev
+Standards-Version: 3.9.0
 Homepage: http://clusterlabs.org/
+Vcs-Hg: http://hg.debian.org/hg/debian-ha/pacemaker
+Vcs-Browser: http://hg.debian.org/hg/debian-ha/pacemaker
 XS-Python-Version: current
 
 Package: pacemaker
-Section: admin
-Priority: optional
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, cluster-agents, python, adduser, corosync (>= 1.1.2) | heartbeat (>= 3.0.beta1)
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends}, cluster-agents, python, adduser, corosync (>= 1.1.2) | heartbeat (>= 3.0)
 Conflicts: pacemaker-heartbeat, pacemaker-openais
 Replaces: pacemaker-heartbeat, pacemaker-openais
 XB-Python-Version: ${python:Versions}
@@ -28,11 +28,10 @@ Description: HA cluster resource manager
 
 Package: pacemaker-dev
 Section: devel
-Priority: optional
 Architecture: any
 Replaces: pacemaker-heartbeat-dev, pacemaker-openais-dev
 Conflicts: pacemaker-heartbeat-dev, pacemaker-openais-dev
-Depends: ${shlibs:Depends}, ${misc:Depends}, pacemaker (>= ${source:Version}), python, libcorosync-dev (>= 1.1.2+svn20091102), libheartbeat2-dev (>= 3.0.beta1+hg20091102) 
+Depends: ${shlibs:Depends}, ${misc:Depends}, pacemaker (>= ${source:Version}), python, libcorosync-dev (>= 1.1.2+svn20091102), libheartbeat2-dev (>= 3.0) , libglib2.0-dev, libxml2-dev, libcluster-glue-dev (>= 1.0.6)
 XB-Python-Version: ${python:Versions}
 Description: HA cluster resource manager (development files)
  High-Availability cluster resource manager for Heartbeat.
