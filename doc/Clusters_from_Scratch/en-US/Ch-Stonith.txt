@@ -1,0 +1,151 @@
+= Configure STONITH =
+
+== What is STONITH? ==
+
+STONITH (Shoot The Other Node In The Head aka. fencing) protects your data from
+being corrupted by rogue nodes or unintended concurrent access.
+
+Just because a node is unresponsive doesn't mean it has stopped
+accessing your data. The only way to be 100% sure that your data is
+safe, is to use STONITH to ensure that the node is truly
+offline before allowing the data to be accessed from another node.
+
+STONITH also has a role to play in the event that a clustered service
+cannot be stopped. In this case, the cluster uses STONITH to force the
+whole node offline, thereby making it safe to start the service
+elsewhere.
+
+== Choose a STONITH Device ==
+
+It is crucial that your STONITH device can allow the cluster to
+differentiate between a node failure and a network failure.
+
+A common mistake people make when choosing a STONITH device is to use a remote
+power switch (such as many on-board IPMI controllers) that shares power with
+the node it controls. If the power fails in such a case, the cluster cannot be
+sure whether the node is really offline, or active and suffering from a network
+fault, so the cluster will stop all resources to avoid a possible split-brain
+situation.
+
+Likewise, any device that relies on the machine being active (such as
+SSH-based "devices" sometimes used during testing) is inappropriate.
+
+== Configure the Cluster for STONITH ==
+
+. Install the STONITH agent(s). To see what packages are available, run `yum
+  search fence-`. Be sure to install the package(s) on all cluster nodes.
+
+. Configure the STONITH device itself to be able to fence your nodes and accept
+  fencing requests. This includes any necessary configuration on the device and
+  on the nodes, and any firewall or SELinux changes needed. Test the
+  communication between the device and your nodes.
+
+. Find the correct STONITH agent script: `pcs stonith list`
+
+. Find the parameters associated with the device: +pcs stonith describe pass:[<replaceable>agent_name</replaceable>]+
+
+. Create a local copy of the CIB: `pcs cluster cib stonith_cfg`
+
+. Create the fencing resource: +pcs -f stonith_cfg stonith create pass:[<replaceable>stonith_id
+  stonith_device_type &#91;stonith_device_options&#93;</replaceable>]+
+
+. Enable STONITH in the cluster: `pcs -f stonith_cfg property set stonith-enabled=true`
+
+. If the device does not know how to fence nodes based on their uname,
+  you may also need to set the special *pcmk_host_map* parameter.  See
+  `man stonithd` for details.
+
+. If the device does not support the *list* command, you may also need
+  to set the special *pcmk_host_list* and/or *pcmk_host_check*
+  parameters.  See `man stonithd` for details.
+
+. If the device does not expect the victim to be specified with the
+  *port* parameter, you may also need to set the special
+  *pcmk_host_argument* parameter. See `man stonithd` for details.
+
+. Commit the new configuration: `pcs cluster cib-push stonith_cfg`
+
+. Once the STONITH resource is running, test it (you might want to stop
+  the cluster on that machine first): +stonith_admin --reboot pass:[<replaceable>nodename</replaceable>]+
+
+== Example ==
+
+For this example, assume we have a chassis containing four nodes
+and an IPMI device active on 10.0.0.1. Following the steps above
+would go something like this:
+
+Step 1: Install the *fence-agents-ipmilan* package on both nodes.
+
+Step 2: Configure the IP address, authentication credentials, etc. in the IPMI device itself.
+
+Step 3: Choose the *fence_ipmilan* STONITH agent.
+
+Step 4: Obtain the agent's possible parameters:
+----
+[root@pcmk-1 ~]# pcs stonith describe fence_ipmilan
+Stonith options for: fence_ipmilan
+  ipport: TCP/UDP port to use for connection with device
+  inet6_only: Forces agent to use IPv6 addresses only
+  ipaddr (required): IP Address or Hostname
+  passwd_script: Script to retrieve password
+  method: Method to fence (onoff|cycle)
+  inet4_only: Forces agent to use IPv4 addresses only
+  passwd: Login password or passphrase
+  lanplus: Use Lanplus to improve security of connection
+  auth: IPMI Lan Auth type.
+  cipher: Ciphersuite to use (same as ipmitool -C parameter)
+  privlvl: Privilege level on IPMI device
+  action (required): Fencing Action
+  login: Login Name
+  verbose: Verbose mode
+  debug: Write debug information to given file
+  version: Display version information and exit
+  help: Display help and exit
+  power_wait: Wait X seconds after issuing ON/OFF
+  login_timeout: Wait X seconds for cmd prompt after login
+  power_timeout: Test X seconds for status change after ON/OFF
+  delay: Wait X seconds before fencing is started
+  ipmitool_path: Path to ipmitool binary
+  shell_timeout: Wait X seconds for cmd prompt after issuing command
+  retry_on: Count of attempts to retry power on
+  sudo: Use sudo (without password) when calling 3rd party sotfware.
+  stonith-timeout: How long to wait for the STONITH action (reboot, on, off) to complete per a stonith device.
+  priority: The priority of the stonith resource. Devices are tried in order of highest priority to lowest.
+  pcmk_host_map: A mapping of host names to ports numbers for devices that do not support host names.
+  pcmk_host_list: A list of machines controlled by this device (Optional unless pcmk_host_check=static-list).
+  pcmk_host_check: How to determine which machines are controlled by the device.
+----
+
+Step 5: `pcs cluster cib stonith_cfg`
+
+Step 6: Here are example parameters for creating our STONITH resource:
+----
+[root@pcmk-1 ~]# pcs -f stonith_cfg stonith create ipmi-fencing fence_ipmilan \
+      pcmk_host_list="pcmk-1 pcmk-2" ipaddr=10.0.0.1 login=testuser \
+      passwd=acd123 op monitor interval=60s
+[root@pcmk-1 ~]# pcs -f stonith_cfg stonith
+ ipmi-fencing	(stonith:fence_ipmilan):	Stopped 
+----
+
+Steps 7-10: Enable STONITH in the cluster:
+----
+[root@pcmk-1 ~]# pcs -f stonith_cfg property set stonith-enabled=true
+[root@pcmk-1 ~]# pcs -f stonith_cfg property
+Cluster Properties:
+ cluster-infrastructure: corosync
+ cluster-name: mycluster
+ dc-version: 1.1.12-a14efad
+ have-watchdog: false
+ stonith-enabled: true
+----
+
+Step 11: `pcs cluster cib-push stonith_cfg`
+
+Step 12: Test:
+----
+[root@pcmk-1 ~]# pcs cluster stop pcmk-2
+[root@pcmk-1 ~]# stonith_admin --reboot pcmk-2
+----
+
+After a successful test, login to any rebooted nodes, and start the cluster
+(with `pcs cluster start`).

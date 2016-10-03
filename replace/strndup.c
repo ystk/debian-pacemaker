@@ -17,22 +17,22 @@
  * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
 
 /* Taken from the GlibC implementation of strndup */
 
-char *strndup(const char *str, size_t len)
+char *
+strndup(const char *str, size_t len)
 {
-	size_t n = strnlen(str,len);
-	char *new = (char *) malloc (len+1);
+    size_t n = strnlen(str, len);
+    char *new = (char *)malloc(len + 1);
 
-	if (NULL == new) {
-		return NULL;
-	}
+    if (NULL == new) {
+        return NULL;
+    }
 
-	new[n] = '\0';
-	return (char *)memcpy (new, str, len);
+    new[n] = '\0';
+    return (char *)memcpy(new, str, len);
 }
-

@@ -17,8 +17,12 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #
-MAINTAINERCLEANFILES = Makefile.in
+include $(top_srcdir)/Makefile.common
+
 EXTRA_DIST		= $(ocf_SCRIPTS)
+
+
+isolationtechdir    = @OCF_RA_DIR@/.isolation
 
 ocfdir		    = @OCF_RA_DIR@/pacemaker
 
@@ -32,5 +36,21 @@ ocf_SCRIPTS	     =  ClusterMon 	\
 			pingd		\
 			Stateful	\
 			SysInfo		\
-			SystemHealth
+			SystemHealth \
+			remote
+
+isolationtech_SCRIPTS	= docker-wrapper
+
+if BUILD_XML_HELP
+
+man7_MANS = $(ocf_SCRIPTS:%=ocf_pacemaker_%.7)
+DBOOK_OPTS = --stringparam command.prefix ocf_pacemaker_ --stringparam variable.prefix OCF_RESKEY_ --param man.vol 7
+
+ocf_pacemaker_%.xml:  %
+	$(AM_V_GEN)OCF_FUNCTIONS=/dev/null OCF_ROOT=$(OCF_ROOT_DIR) sh $(abs_builddir)/$< meta-data > $@
+
+endif
+
+clean-generic:
+	rm -f $(man7_MANS) $(ocf_SCRIPTS:%=%.xml) *~
 

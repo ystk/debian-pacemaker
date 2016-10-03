@@ -1,72 +1,79 @@
-/* 
+/*
  * Copyright (C) 2004 Andrew Beekhof <andrew@beekhof.net>
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
  * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- * 
+ * version 2 of the License, or (at your option) any later version.
+ *
  * This software is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef CRM_COMMON_XML__H
-#define CRM_COMMON_XML__H
+#  define CRM_COMMON_XML__H
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <unistd.h>
+/**
+ * \file
+ * \brief Wrappers for and extensions to libxml2
+ * \ingroup core
+ */
 
-#include <stdlib.h>
-#include <errno.h>
-#include <fcntl.h>
+#  include <stdio.h>
+#  include <sys/types.h>
+#  include <unistd.h>
 
-#include <crm/crm.h>
-#include <ha_msg.h>
+#  include <stdlib.h>
+#  include <errno.h>
+#  include <fcntl.h>
 
-#include <libxml/tree.h> 
-#include <libxml/xpath.h>
-typedef xmlNode crm_data_t;
+#  include <crm/crm.h>
 
-#define CRM_BZ2_BLOCKS		4
-#define CRM_BZ2_WORK		20
-#define CRM_BZ2_THRESHOLD	10 * 1024
+#  include <libxml/tree.h>
+#  include <libxml/xpath.h>
 
-#define XML_PARANOIA_CHECKS 0
+/* Compression costs a LOT, don't do it unless we're hitting message limits
+ *
+ * For now, use 256k as the lower size, which means we can have 4 big data fields
+ *  before we hit heartbeat's message limit
+ *
+ * The previous limit was 10k, compressing 184 of 1071 messages accounted for 23%
+ *  of the total CPU used by the cib
+ */
+#  define CRM_BZ2_BLOCKS		4
+#  define CRM_BZ2_WORK		20
+#  define CRM_BZ2_THRESHOLD	128 * 1024
 
-extern gboolean add_message_xml(
-	xmlNode *msg, const char *field, xmlNode *xml);
-extern xmlNode *get_message_xml(xmlNode *msg, const char *field);
-extern GHashTable *xml2list(xmlNode *parent);
-#if CRM_DEPRECATED_SINCE_2_0_3
-extern GHashTable *xml2list_202(xmlNode *parent);
-#endif
-extern void hash2nvpair(gpointer key, gpointer value, gpointer user_data);
-extern void hash2field(gpointer key, gpointer value, gpointer user_data);
-extern void hash2metafield(gpointer key, gpointer value, gpointer user_data);
-extern void hash2smartfield(gpointer key, gpointer value, gpointer user_data);
+#  define XML_PARANOIA_CHECKS 0
+
+gboolean add_message_xml(xmlNode * msg, const char *field, xmlNode * xml);
+xmlNode *get_message_xml(xmlNode * msg, const char *field);
+GHashTable *xml2list(xmlNode * parent);
+
+void hash2nvpair(gpointer key, gpointer value, gpointer user_data);
+void hash2field(gpointer key, gpointer value, gpointer user_data);
+void hash2metafield(gpointer key, gpointer value, gpointer user_data);
+void hash2smartfield(gpointer key, gpointer value, gpointer user_data);
+
+xmlDoc *getDocPtr(xmlNode * node);
 
 /*
  * Replacement function for xmlCopyPropList which at the very least,
- * doesnt work the way *I* would expect it to.
+ * doesn't work the way *I* would expect it to.
  *
  * Copy all the attributes/properties from src into target.
  *
- * Not recursive, does not return anything. 
+ * Not recursive, does not return anything.
  *
  */
-extern void copy_in_properties(xmlNode *target, xmlNode *src);
-extern void expand_plus_plus(xmlNode* target, const char *name, const char *value);
-extern void fix_plus_plus_recursive(xmlNode* target);
-
-void free_xml_from_parent(xmlNode *parent, xmlNode *a_node);
-#define zap_xml_from_parent(parent, xml_obj) free_xml_from_parent(parent, xml_obj); xml_obj = NULL
-
+void copy_in_properties(xmlNode * target, xmlNode * src);
+void expand_plus_plus(xmlNode * target, const char *name, const char *value);
+void fix_plus_plus_recursive(xmlNode * target);
 
 /*
  * Create a node named "name" as a child of "parent"
@@ -75,7 +82,7 @@ void free_xml_from_parent(xmlNode *parent, xmlNode *a_node);
  * Returns the created node
  *
  */
-extern xmlNode *create_xml_node(xmlNode *parent, const char *name);
+xmlNode *create_xml_node(xmlNode * parent, const char *name);
 
 /*
  * Make a copy of name and value and use the copied memory to create
@@ -88,211 +95,224 @@ extern xmlNode *create_xml_node(xmlNode *parent, const char *name);
  * Returns FALSE on failure and TRUE on success.
  *
  */
-extern const char *crm_xml_add(
-	xmlNode *node, const char *name, const char *value);
+const char *crm_xml_add(xmlNode * node, const char *name, const char *value);
 
-extern const char *crm_xml_replace(
-	xmlNode *node, const char *name, const char *value);
+const char *crm_xml_replace(xmlNode * node, const char *name, const char *value);
 
-extern const char *crm_xml_add_int(
-	xmlNode* node, const char *name, int value);
+const char *crm_xml_add_int(xmlNode * node, const char *name, int value);
+
+/*!
+ * \brief Add a boolean attribute to an XML object
+ *
+ * Add an attribute with the value XML_BOOLEAN_TRUE or XML_BOOLEAN_FALSE
+ * as appropriate to an XML object.
+ *
+ * \param[in/out] node   XML object to add attribute to
+ * \param[in]     name   Name of attribute to add
+ * \param[in]     value  Boolean whose value will be tested
+ *
+ * \return Pointer to newly created XML attribute's content, or NULL on error
+ */
+static inline const char *
+crm_xml_add_boolean(xmlNode *node, const char *name, gboolean value)
+{
+    return crm_xml_add(node, name, (value? "true" : "false"));
+}
 
 /*
  * Unlink the node and set its doc pointer to NULL so free_xml()
  * will act appropriately
  */
-extern void unlink_xml_node(xmlNode *node);
+void unlink_xml_node(xmlNode * node);
 
 /*
- * 
+ *
  */
-extern void purge_diff_markers(xmlNode *a_node);
+void purge_diff_markers(xmlNode * a_node);
 
 /*
  * Returns a deep copy of src_node
  *
  */
-extern xmlNode *copy_xml(xmlNode *src_node);
+xmlNode *copy_xml(xmlNode * src_node);
 
 /*
  * Add a copy of xml_node to new_parent
  */
-extern xmlNode *add_node_copy(
-	xmlNode *new_parent, xmlNode *xml_node);
+xmlNode *add_node_copy(xmlNode * new_parent, xmlNode * xml_node);
 
-extern int add_node_nocopy(xmlNode *parent, const char *name, xmlNode *child);
-
+int add_node_nocopy(xmlNode * parent, const char *name, xmlNode * child);
 
 /*
  * XML I/O Functions
  *
  * Whitespace between tags is discarded.
  */
-extern xmlNode *filename2xml(const char *filename);
+xmlNode *filename2xml(const char *filename);
 
-extern xmlNode *stdin2xml(void);
+xmlNode *stdin2xml(void);
 
-extern xmlNode *string2xml(const char *input);
+xmlNode *string2xml(const char *input);
 
-extern int write_xml_file(
-	xmlNode *xml_node, const char *filename, gboolean compress);
+int write_xml_fd(xmlNode * xml_node, const char *filename, int fd, gboolean compress);
+int write_xml_file(xmlNode * xml_node, const char *filename, gboolean compress);
 
-extern char *dump_xml_formatted(xmlNode *msg);
+char *dump_xml_formatted(xmlNode * msg);
+/* Also dump the text node with xml_log_option_text enabled */ 
+char *dump_xml_formatted_with_text(xmlNode * msg);
 
-extern char *dump_xml_unformatted(xmlNode *msg);
-
-extern void print_xml_formatted(
-	int log_level, const char *function,
-	xmlNode *an_xml_node, const char *text);
+char *dump_xml_unformatted(xmlNode * msg);
 
 /*
  * Diff related Functions
- */ 
-extern xmlNode *diff_xml_object(
-	xmlNode *left, xmlNode *right, gboolean suppress);
+ */
+xmlNode *diff_xml_object(xmlNode * left, xmlNode * right, gboolean suppress);
 
-extern void print_xml_diff(FILE *where, xmlNode *diff);
-extern void log_xml_diff(unsigned int log_level, xmlNode *diff, const char *function);
+xmlNode *subtract_xml_object(xmlNode * parent, xmlNode * left, xmlNode * right,
+                             gboolean full, gboolean * changed, const char *marker);
 
-extern gboolean apply_xml_diff(
-	xmlNode *old, xmlNode *diff, xmlNode **new);
+gboolean can_prune_leaf(xmlNode * xml_node);
 
+void print_xml_diff(FILE * where, xmlNode * diff);
+
+gboolean apply_xml_diff(xmlNode * old, xmlNode * diff, xmlNode ** new);
 
 /*
  * Searching & Modifying
  */
-extern xmlNode *find_xml_node(
-	xmlNode *cib, const char * node_path, gboolean must_find);
+xmlNode *find_xml_node(xmlNode * cib, const char *node_path, gboolean must_find);
 
-extern xmlNode *find_entity(
-	xmlNode *parent, const char *node_name, const char *id);
+xmlNode *find_entity(xmlNode * parent, const char *node_name, const char *id);
 
-extern xmlNode *subtract_xml_object(
-	xmlNode *left, xmlNode *right, const char *marker);
+void xml_remove_prop(xmlNode * obj, const char *name);
 
-extern int add_xml_object(
-	xmlNode *parent, xmlNode *target, xmlNode *update);
+gboolean replace_xml_child(xmlNode * parent, xmlNode * child, xmlNode * update,
+                           gboolean delete_only);
 
-extern void xml_remove_prop(xmlNode *obj, const char *name);
+gboolean update_xml_child(xmlNode * child, xmlNode * to_update);
 
-extern gboolean replace_xml_child(
-	xmlNode *parent, xmlNode *child, xmlNode *update, gboolean delete_only);
+int find_xml_children(xmlNode ** children, xmlNode * root,
+                      const char *tag, const char *field, const char *value,
+                      gboolean search_matches);
 
-extern gboolean update_xml_child(xmlNode *child, xmlNode *to_update);
+int crm_element_value_int(xmlNode * data, const char *name, int *dest);
+char *crm_element_value_copy(xmlNode * data, const char *name);
+int crm_element_value_const_int(const xmlNode * data, const char *name, int *dest);
+const char *crm_element_value_const(const xmlNode * data, const char *name);
+xmlNode *get_xpath_object(const char *xpath, xmlNode * xml_obj, int error_level);
+xmlNode *get_xpath_object_relative(const char *xpath, xmlNode * xml_obj, int error_level);
 
-extern int find_xml_children(
-	xmlNode **children, xmlNode *root,
-	const char *tag, const char *field, const char *value,
-	gboolean search_matches);
-
-extern int crm_element_value_int(xmlNode *data, const char *name, int *dest);
-extern char *crm_element_value_copy(xmlNode *data, const char *name);
-extern const char *crm_element_value_const(const xmlNode *data, const char *name);
-extern xmlNode *get_xpath_object(const char *xpath, xmlNode *xml_obj, int error_level);
-extern xmlNode *get_xpath_object_relative(const char *xpath, xmlNode *xml_obj, int error_level);
-
-static inline const char *crm_element_name(const xmlNode *data)
+static inline const char *
+crm_element_name(xmlNode *xml)
 {
-    return (data ? (const char *)data->name : NULL);
+    return xml? (const char *)(xml->name) : NULL;
 }
 
-extern const char *crm_element_value(xmlNode *data, const char *name);
+const char *crm_element_value(xmlNode * data, const char *name);
 
-extern void xml_validate(const xmlNode *root);
+void xml_validate(const xmlNode * root);
 
-extern gboolean xml_has_children(const xmlNode *root);	 		
+gboolean xml_has_children(const xmlNode * root);
 
-extern char *calculate_xml_digest(xmlNode *local_cib, gboolean sort, gboolean do_filter);
+char *calculate_on_disk_digest(xmlNode * local_cib);
+char *calculate_operation_digest(xmlNode * local_cib, const char *version);
+char *calculate_xml_versioned_digest(xmlNode * input, gboolean sort, gboolean do_filter,
+                                     const char *version);
 
-extern gboolean validate_xml(xmlNode *xml_blob, const char *validation, gboolean to_logs);
-extern gboolean validate_xml_verbose(xmlNode *xml_blob);
-extern int update_validation(xmlNode **xml_blob, int *best, gboolean transform, gboolean to_logs);
-extern int get_schema_version(const char *name);
-extern const char *get_schema_name(int version);
+gboolean validate_xml(xmlNode * xml_blob, const char *validation, gboolean to_logs);
+gboolean validate_xml_verbose(xmlNode * xml_blob);
+int update_validation(xmlNode ** xml_blob, int *best, int max, gboolean transform, gboolean to_logs);
+int get_schema_version(const char *name);
+const char *get_schema_name(int version);
 
-#if XML_PARANOIA_CHECKS
-#  define crm_validate_data(obj) xml_validate(obj)
-#else
-#  define crm_validate_data(obj) CRM_DEV_ASSERT(obj != NULL)
-#endif
+void crm_xml_init(void);
+void crm_xml_cleanup(void);
 
-#  define xml_child_iter(parent, child, code) do {			\
-	if(parent != NULL) {						\
-		xmlNode *child = NULL;					\
-		xmlNode *__crm_xml_iter = parent->children;		\
-		while(__crm_xml_iter != NULL) {				\
-			child = __crm_xml_iter;				\
-			__crm_xml_iter = __crm_xml_iter->next;		\
-			if(child->type == XML_ELEMENT_NODE) {		\
-			    code;					\
-			}						\
-		}							\
-	}								\
-    } while(0)
+static inline xmlNode *
+__xml_first_child(xmlNode * parent)
+{
+    xmlNode *child = NULL;
 
-#  define xml_child_iter_filter(parent, child, filter, code) do {	\
-	if(parent != NULL) {						\
-	    xmlNode *child = NULL;					\
-	    xmlNode *__crm_xml_iter = parent->children;			\
-	    while(__crm_xml_iter != NULL) {				\
-		child = __crm_xml_iter;					\
-		__crm_xml_iter = __crm_xml_iter->next;			\
-		if(child->type == XML_ELEMENT_NODE) {			\
-		    if(filter == NULL					\
-		       || crm_str_eq(filter, (const char *)child->name, TRUE)) { \
-			code;						\
-		    }							\
-		}							\
-	    }								\
-	}								\
-    } while(0)
+    if (parent) {
+        child = parent->children;
+        while (child && child->type == XML_TEXT_NODE) {
+            child = child->next;
+        }
+    }
+    return child;
+}
 
-#  define xml_prop_iter(parent, prop_name, prop_value, code) do {	\
-	if(parent != NULL) {						\
-	    xmlAttrPtr prop_iter = parent->properties;			\
-	    const char *prop_name = NULL;				\
-	    const char *prop_value = NULL;				\
-	    while(prop_iter != NULL) {					\
-		prop_name = (const char *)prop_iter->name;		\
-		prop_value = crm_element_value(parent, prop_name);\
-		prop_iter = prop_iter->next;				\
-		if(prop_name) {						\
-		    code;						\
-		}							\
-	    }								\
-	}								\
-    } while(0)
+static inline xmlNode *
+__xml_next(xmlNode * child)
+{
+    if (child) {
+        child = child->next;
+        while (child && child->type == XML_TEXT_NODE) {
+            child = child->next;
+        }
+    }
+    return child;
+}
 
-#  define free_xml(a_node) do {						\
-	if((a_node) != NULL) {						\
-	    xmlNode *a_doc_top = NULL;					\
-	    xmlDoc *a_doc = (a_node)->doc;				\
-	    if (a_doc != NULL) {					\
-		a_doc_top = xmlDocGetRootElement(a_doc);		\
-	    }								\
-	    if(a_doc != NULL && a_doc_top == (a_node)) {		\
-		xmlFreeDoc(a_doc);					\
-									\
-	    } else {							\
-		/* make sure the node is unlinked first */		\
-		xmlUnlinkNode(a_node);					\
-		xmlFreeNode(a_node);					\
-	    }								\
-	}								\
-    } while(0)
+static inline xmlNode *
+__xml_next_element(xmlNode * child)
+{
+    if (child) {
+        child = child->next;
+        while (child && child->type != XML_ELEMENT_NODE) {
+            child = child->next;
+        }
+    }
+    return child;
+}
 
+void free_xml(xmlNode * child);
 
-extern xmlNode *first_named_child(xmlNode *parent, const char *name);
+xmlNode *first_named_child(xmlNode * parent, const char *name);
 
-extern xmlNode *convert_ipc_message(IPC_Message *msg, const char *field);
-extern xmlNode *convert_ha_message(xmlNode *parent, HA_Message *msg, const char *field);
+xmlNode *sorted_xml(xmlNode * input, xmlNode * parent, gboolean recursive);
+xmlXPathObjectPtr xpath_search(xmlNode * xml_top, const char *path);
+void crm_foreach_xpath_result(xmlNode *xml, const char *xpath,
+                              void (*helper)(xmlNode*, void*), void *user_data);
+gboolean cli_config_update(xmlNode ** xml, int *best_version, gboolean to_logs);
+xmlNode *expand_idref(xmlNode * input, xmlNode * top);
 
-extern HA_Message *convert_xml_message(xmlNode *msg);
-extern xmlNode *sorted_xml(xmlNode *input, xmlNode *parent, gboolean recursive);
-extern xmlXPathObjectPtr xpath_search(xmlNode *xml_top, const char *path);
-extern gboolean cli_config_update(xmlNode **xml, int *best_version, gboolean to_logs);
-extern xmlNode *expand_idref(xmlNode *input, xmlNode *top);
+void freeXpathObject(xmlXPathObjectPtr xpathObj);
+xmlNode *getXpathResult(xmlXPathObjectPtr xpathObj, int index);
+void dedupXpathResults(xmlXPathObjectPtr xpathObj);
 
-extern xmlNode *getXpathResult(xmlXPathObjectPtr xpathObj, int index);
+static inline int numXpathResults(xmlXPathObjectPtr xpathObj)
+{
+    if(xpathObj == NULL || xpathObj->nodesetval == NULL) {
+        return 0;
+    }
+    return xpathObj->nodesetval->nodeNr;
+}
 
+const char *xml_latest_schema(void);
+
+bool xml_acl_enabled(xmlNode *xml);
+void xml_acl_disable(xmlNode *xml);
+bool xml_acl_denied(xmlNode *xml); /* Part or all of a change was rejected */
+bool xml_acl_filtered_copy(const char *user, xmlNode* acl_source, xmlNode *xml, xmlNode ** result);
+
+bool xml_tracking_changes(xmlNode * xml);
+bool xml_document_dirty(xmlNode *xml);
+void xml_track_changes(xmlNode * xml, const char *user, xmlNode *acl_source, bool enforce_acls);
+void xml_calculate_changes(xmlNode * old, xmlNode * new); /* For comparing two documents after the fact */
+void xml_accept_changes(xmlNode * xml);
+void xml_log_changes(uint8_t level, const char *function, xmlNode *xml);
+void xml_log_patchset(uint8_t level, const char *function, xmlNode *xml);
+bool xml_patch_versions(xmlNode *patchset, int add[3], int del[3]);
+
+xmlNode *xml_create_patchset(
+    int format, xmlNode *source, xmlNode *target, bool *config, bool manage_version);
+int xml_apply_patchset(xmlNode *xml, xmlNode *patchset, bool check_version);
+
+void patchset_process_digest(xmlNode *patch, xmlNode *source, xmlNode *target, bool with_digest);
+
+void save_xml_to_file(xmlNode * xml, const char *desc, const char *filename);
+char *xml_get_path(xmlNode *xml);
+
+char * crm_xml_escape(const char *text);
 #endif

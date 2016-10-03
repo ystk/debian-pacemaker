@@ -28,9 +28,17 @@
 #######################################################################
 # Initialization:
 
-. ${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs
+: ${OCF_FUNCTIONS=${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs}
+. ${OCF_FUNCTIONS}
+: ${__OCF_ACTION=$1}
 
 #######################################################################
+
+if [ -e "$OCF_ROOT/resource.d/heartbeat/controld" ]; then
+    ocf_log info "Using heartbeat controld agent"
+    $OCF_ROOT/resource.d/heartbeat/controld $1
+    exit $?
+fi
 
 meta_data() {
 	cat <<END
@@ -40,11 +48,11 @@ meta_data() {
 <version>1.0</version>
 
 <longdesc lang="en">
-This Resource Agent can control the dlm_controld services needed by ocfs2.
+This Resource Agent can control the dlm_controld services needed by cluster-aware file systems.
 It assumes that dlm_controld is in your default PATH.
 In most cases, it should be run as an anonymous clone.
 </longdesc>
-<shortdesc lang="en">DLM Agent for OCFS2</shortdesc>
+<shortdesc lang="en">DLM Agent for cluster file systems</shortdesc>
 
 <parameters>
 
@@ -53,7 +61,7 @@ In most cases, it should be run as an anonymous clone.
 Any additional options to start the dlm_controld service with
 </longdesc>
 <shortdesc lang="en">DLM Options</shortdesc>
-<content type="string" default="-q 0" />
+<content type="string" default="-s 0" />
 </parameter>
 
 <parameter name="configdir" unique="1">
@@ -62,6 +70,28 @@ The location where configfs is or should be mounted
 </longdesc>
 <shortdesc lang="en">Location of configfs</shortdesc>
 <content type="string" default="/sys/kernel/config" />
+</parameter>
+
+<parameter name="daemon" unique="1">
+<longdesc lang="en">
+The daemon to start - supports gfs_controld(.pcmk) and dlm_controld(.pcmk)
+</longdesc>
+<shortdesc lang="en">The daemon to start</shortdesc>
+<content type="string" default="dlm_controld.pcmk" />
+</parameter>
+
+<parameter name="allow_stonith_disabled">
+<longdesc lang="en">
+Allow DLM start-up even if STONITH/fencing is disabled in the cluster.
+
+Setting this option to true will cause cluster malfunction and hangs on
+fail-over for DLM clients that require fencing (such as GFS2, OCFS2, and
+cLVM2).
+
+This option is advanced use only.
+</longdesc>
+<shortdesc lang="en">Allow start-up even without STONITH/fencing</shortdesc>
+<content type="string" default="false" />
 </parameter>
 
 </parameters>
@@ -79,12 +109,29 @@ END
 
 #######################################################################
 
+DLM_SYSFS_DIR="/sys/kernel/dlm"
+
 controld_usage() {
 	cat <<END
 usage: $0 {start|stop|monitor|validate-all|meta-data}
 
 Expects to have a fully populated OCF RA-compliant environment set.
 END
+}
+
+check_uncontrolled_locks()
+{
+    local tmp
+    tmp=$(ls $DLM_SYSFS_DIR 2>&1)
+    if [ $? -eq 0 ]; then
+        if [ -n "$tmp" ]; then
+
+            ocf_log err "Uncontrolled lockspace exists, system must reboot. Executing suicide fencing"
+            stonith_admin --reboot=$(crm_node -n) --tag controld
+
+            exit $OCF_ERR_GENERIC
+        fi
+    fi
 }
 
 controld_start() {
@@ -100,7 +147,7 @@ controld_start() {
     	    modprobe configfs
     	    if [ ! -e $OCF_RESKEY_configdir ]; then
                ocf_log err "$OCF_RESKEY_configdir not available"
-       	       return $OCF_NOT_INSTALLED
+       	       return $OCF_ERR_INSTALLED
 	    fi
 	fi
 
@@ -113,14 +160,41 @@ controld_start() {
            modprobe dlm
     	   if [ ! -e $OCF_RESKEY_configdir/dlm ]; then
               ocf_log err "$OCF_RESKEY_configdir/dlm not available"
-       	      return $OCF_NOT_INSTALLED
+       	      return $OCF_ERR_INSTALLED
 	   fi
     	fi
 
+    if ! ocf_is_true "$OCF_RESKEY_allow_stonith_disabled" && \
+    	! ocf_is_true "`crm_attribute --type=crm_config --name=stonith-enabled --query --quiet --default=true`"; then
+        ocf_log err "The cluster property stonith-enabled may not be deactivated to use the DLM"
+        return $OCF_ERR_CONFIGURED
+    fi
+
     ${OCF_RESKEY_daemon} $OCF_RESKEY_args
 
-    sleep 1
-    controld_monitor
+    while true
+    do
+        sleep 1
+
+        controld_monitor; rc=$?
+        case $rc in
+          $OCF_SUCCESS)
+            local addr_list
+            addr_list="$(cat /sys/kernel/config/dlm/cluster/comms/*/addr_list 2>/dev/null)"
+            if [ $? -eq 0 ] && [ -n "$addr_list" ]; then
+                return $OCF_SUCCESS
+            fi
+            ;;
+          $OCF_NOT_RUNNING) 
+            return $OCF_NOT_RUNNING
+            ;;
+          *) 
+            return $OCF_ERR_GENERIC
+            ;;
+        esac
+
+        ocf_log debug "Waiting for ${OCF_RESKEY_daemon} to be ready"
+    done
 }
 
 controld_stop() {
@@ -150,21 +224,38 @@ controld_stop() {
 }
 
 controld_monitor() {
-    killall -0 ${OCF_RESKEY_daemon}; rc=$?
+    local rc
+    killall -0 ${OCF_RESKEY_daemon} >/dev/null 2>&1 ; rc=$?
 
     case $rc in
-      0) return $OCF_SUCCESS;;
-      1) return $OCF_NOT_RUNNING;;
-      *) return $OCF_ERR_GENERIC;;
+      0) dlm_tool ls | grep -q "wait fencing"
+         if [ $? -eq 0 ]; then
+             ocf_log err "DLM status is: wait fencing"
+             rc=$OCF_ERR_GENERIC
+         else
+             rc=$OCF_SUCCESS
+         fi
+         ;;
+      1) rc=$OCF_NOT_RUNNING;;
+      *) rc=$OCF_ERR_GENERIC;;
     esac
+
+    # if the dlm is not successfully running, but
+    # dlm lockspace bits are left over, we self must fence.
+    if [ $rc -ne $OCF_SUCCESS ]; then
+        check_uncontrolled_locks
+    fi
+
+    return $rc
 }
 
 controld_validate() {
+    check_binary killall
     check_binary ${OCF_RESKEY_daemon}
 
-    case ${OCF_RESKEY_CRM_meta_gloablly_unique} in
+    case ${OCF_RESKEY_CRM_meta_globally_unique} in
 	yes|Yes|true|True|1) 
-	    ocf_log err "$OCF_RESOURCE_INSTANCE must be configured with the gloablly_unique=false meta attribute"
+	    ocf_log err "$OCF_RESOURCE_INSTANCE must be configured with the globally_unique=false meta attribute"
 	    exit $OCF_ERR_CONFIGURED
 	    ;;
     esac
@@ -176,20 +267,25 @@ controld_validate() {
 
 : ${OCF_RESKEY_sctp=false}
 : ${OCF_RESKEY_configdir=/sys/kernel/config}
-: ${OCF_RESKEY_CRM_meta_gloablly_unique:="false"}
+: ${OCF_RESKEY_CRM_meta_globally_unique:="false"}
+
+case "$HA_quorum_type" in
+    pcmk) daemon_ext=".pcmk";;
+    *) daemon_ext="";;
+esac
 
 case "$OCF_RESOURCE_INSTANCE" in
     *[gG][fF][sS]*) 
 	: ${OCF_RESKEY_args=-g 0}
-	: ${OCF_RESKEY_daemon=gfs_controld.pcmk}
+	: ${OCF_RESKEY_daemon=gfs_controld${daemon_ext}}
 	;;
     *[dD][lL][mM]*)
-	: ${OCF_RESKEY_args=-q 0}
-	: ${OCF_RESKEY_daemon=dlm_controld.pcmk}
+	: ${OCF_RESKEY_args=-s 0}
+	: ${OCF_RESKEY_daemon=dlm_controld${daemon_ext}}
 	;;
     *)
-	: ${OCF_RESKEY_args=-q 0}
-	: ${OCF_RESKEY_daemon=dlm_controld.pcmk}
+	: ${OCF_RESKEY_args=-s 0}
+	: ${OCF_RESKEY_daemon=dlm_controld${daemon_ext}}
 esac
 
 case $__OCF_ACTION in

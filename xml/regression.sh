@@ -5,7 +5,7 @@
  # This program is free software; you can redistribute it and/or
  # modify it under the terms of the GNU General Public
  # License as published by the Free Software Foundation; either
- # version 2.1 of the License, or (at your option) any later version.
+ # version 2 of the License, or (at your option) any later version.
  # 
  # This software is distributed in the hope that it will be useful,
  # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
  # 
  # You should have received a copy of the GNU General Public
  # License along with this library; if not, write to the Free Software
- # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  #
 
 . regression.core.sh
@@ -204,7 +204,7 @@ do_test inc10 "Non-unique clone (stop)"
 do_test inc11 "Primitive colocation with clones" 
 do_test inc12 "Clone shutdown" 
 do_test cloned-group "Make sure only the correct number of cloned groups are started"
-do_test clone-no-shuffle "Dont prioritize allocation of instances that must be moved"
+do_test clone-no-shuffle "Don't prioritize allocation of instances that must be moved"
 
 echo ""
 do_test master-0 "Stopped -> Slave"
@@ -228,8 +228,8 @@ do_test master-ordering "Prevent resources from starting that need a master"
 do_test bug-1765 "Master-Master Colocation (dont stop the slaves)"
 do_test master-group "Promotion of cloned groups"
 do_test bug-lf-1852 "Don't shuffle master/slave instances unnecessarily"
-do_test master-failed-demote "Dont retry failed demote actions"
-do_test master-failed-demote-2 "Dont retry failed demote actions (notify=false)"
+do_test master-failed-demote "Don't retry failed demote actions"
+do_test master-failed-demote-2 "Don't retry failed demote actions (notify=false)"
 do_test master-depend "Ensure resources that depend on the master don't get allocated until the master does"
 
 echo ""
@@ -264,7 +264,7 @@ do_test 764 "OSDL #764"
 do_test 797 "OSDL #797"
 do_test 829 "OSDL #829"
 do_test 994 "OSDL #994"
-do_test 994-2 "OSDL #994 - with a dependant resource"
+do_test 994-2 "OSDL #994 - with a dependent resource"
 do_test 1360 "OSDL #1360 - Clone stickiness"
 do_test 1484 "OSDL #1484 - on_fail=stop"
 do_test 1494 "OSDL #1494 - Clone stability"
@@ -275,7 +275,7 @@ do_test stonith-2 "Stonith loop - 3"
 do_test bug-1572-1 "Recovery of groups depending on master/slave"
 do_test bug-1572-2 "Recovery of groups depending on master/slave when the master is never re-promoted"
 do_test bug-1685 "Depends-on-master ordering"
-do_test bug-1822 "Dont promote partially active groups"
+do_test bug-1822 "Don't promote partially active groups"
 do_test bug-pm-11 "New resource added to a m/s group"
 do_test bug-pm-12 "Recover only the failed portion of a cloned group"
 do_test bug-n-387749 "Don't shuffle clone instances"

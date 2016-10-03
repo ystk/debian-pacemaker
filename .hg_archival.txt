@@ -1,5 +1,0 @@
-repo: 8448b17e67437947c48c639c6faa4371c4a14b3b
-node: 74392a28b7f31d7ddc86689598bd23114f58978b
-branch: stable-1.0
-latesttag: Pacemaker-1.0.9.1
-latesttagdistance: 14

@@ -13,25 +13,25 @@
  * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
 #include <crm_internal.h>
 #include <errno.h>
 #include <stdio.h>
-extern const char *	sys_err[];
-extern int	sys_nerr;
+extern const char *sys_err[];
+extern int sys_nerr;
 char *
 strerror(int errnum)
 {
-	static	char  whaterr[32];
+    static char whaterr[32];
 
-	if (errnum < 0) {
-		return "negative errno";
-	}
-	if (errnum >= sys_nerr) {
-		snprintf(whaterr, sizeof(whaterr),"error %d",  errnum);
-		return whaterr;
-	}
-	return sys_err[sys_nerr];
+    if (errnum < 0) {
+        return "negative errno";
+    }
+    if (errnum >= sys_nerr) {
+        snprintf(whaterr, sizeof(whaterr), "error %d", errnum);
+        return whaterr;
+    }
+    return sys_err[sys_nerr];
 }

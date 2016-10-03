@@ -1,0 +1,73 @@
+# Control file for the Travis autobuilder
+# https://docs.travis-ci.com/user/customizing-the-build/
+
+language: c
+compiler:
+ - gcc
+ - clang
+# - cov-build
+
+env:
+  global:
+
+    # -- BEGIN Coverity Scan ENV
+    # Used by https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh
+    # The build command with all of the arguments that you would apply to a manual `cov-build`
+    - COVERITY_SCAN_BUILD_COMMAND="make"
+
+    # Email address for notifications related to this build
+    - OWNER_EMAIL="andrew@beekhof.net"
+
+    # Regular expression selects on which branches to run analysis
+    # Be aware of quotas. Do not run on every branch/commit
+    - COVERITY_SCAN_BRANCH_PATTERN="1.1"
+
+    # COVERITY_SCAN_TOKEN via "travis encrypt" using the repo's public key
+    - secure: "qnrF7L8RejLUY7URdNe7XP4Hu4R55C0tvAuMRg4EjVtelOpw+nIgA7BLiX19q/70VjFuKcGnMhW28TdYl0uwMMdWKKxmwTim04Sy3UfOE2BPeuQOBphr+8s9gd0U1MO8j2dZ84A40t5Mkk946wWZwT0okpjOr/PfBOZkU3o87FM="
+
+    # -- END Coverity Scan ENV
+
+# sudo add-apt-repository ppa:hotot-team
+before_install:
+ - sudo add-apt-repository "deb http://archive.ubuntu.com/ubuntu/ trusty main"
+ - sudo apt-get update -qq
+
+install:
+ - sudo apt-get install -qq automake autoconf chrpath libglib2.0-dev perl net-tools python libtool libxml2-dev bison flex uuid-dev libbz2-dev zlib1g-dev libltdl3-dev libgnutls-dev python-central python-dev libpam0g-dev libncurses5-dev libcorosync-dev libxslt1-dev libdbus-1-dev
+ - sudo apt-get install -qq cluster-glue-dev heartbeat-dev libheartbeat2-dev 
+ - sudo apt-get install -qq libqb-dev
+
+before_script:
+# Save and restore CC so that ./configure can pass
+ - export CC_SAVED=$CC
+ - export CC=`echo ${CC} | sed s/cov-build/gcc/`
+ - ./autogen.sh
+ - ./configure
+ - export CC=$CC_SAVED
+
+script: 
+- if test ${CC} != cov-build; then sudo make install-exec-local || true; fi
+- if test ${CC} != cov-build; then make && ./BasicSanity.sh -V; fi
+- if test ${CC} = cov-build; then export CC=gcc; bash ./travisci_build_coverity_scan.sh; fi
+
+#after_script:
+#after_success:
+
+after_failure:
+ - lsb_release -a
+ - sudo cat /etc/apt/sources.list
+ - whoami
+ - env | sort 
+ - cat include/config.h
+
+notifications:
+  irc: "irc.freenode.org#pcmk"
+  email:
+    recipients:
+      - andrew@beekhof.net
+
+# whitelist
+branches:
+  only:
+    - master
+    - 1.1

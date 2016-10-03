@@ -1,19 +1,19 @@
-/* 
+/*
  * Copyright (C) 2004 Andrew Beekhof <andrew@beekhof.net>
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
  * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- * 
+ * version 2 of the License, or (at your option) any later version.
+ *
  * This software is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include <crm_internal.h>
@@ -27,8 +27,10 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include <crm/common/ipc.h>
-#include <crm/pengine/common.h>
+#include <crm/common/ipcs.h>
+#include <crm/common/mainloop.h>
+#include <crm/pengine/internal.h>
+#include <crm/msg_xml.h>
 
 #if HAVE_LIBXML2
 #  include <libxml/parser.h>
@@ -36,178 +38,158 @@
 
 #define OPTARGS	"hVc"
 
-char *ipc_server = NULL;
 GMainLoop *mainloop = NULL;
+qb_ipcs_service_t *ipcs = NULL;
 
-void usage(const char* cmd, int exit_status);
 void pengine_shutdown(int nsig);
-extern gboolean process_pe_message(xmlNode *msg, xmlNode *xml_data, IPC_Channel *sender);
 
-static gboolean
-pe_msg_callback(IPC_Channel *client, gpointer user_data)
+static int32_t
+pe_ipc_accept(qb_ipcs_connection_t * c, uid_t uid, gid_t gid)
 {
-    xmlNode *msg = NULL;
-    gboolean stay_connected = TRUE;
-	
-    while(IPC_ISRCONN(client)) {
-	if(client->ops->is_message_pending(client) == 0) {
-	    break;
-	}
-
-	msg = xmlfromIPC(client, MAX_IPC_DELAY);
-	if (msg != NULL) {
-	    xmlNode *data = get_message_xml(msg, F_CRM_DATA);		
-	    process_pe_message(msg, data, client);
-	    free_xml(msg);
-	}
+    crm_trace("Connection %p", c);
+    if (crm_client_new(c, uid, gid) == NULL) {
+        return -EIO;
     }
-    
-    if (client->ch_status != IPC_CONNECT) {
-	stay_connected = FALSE;
-    }
-
-    return stay_connected;
+    return 0;
 }
 
-static void pe_connection_destroy(gpointer user_data)
+static void
+pe_ipc_created(qb_ipcs_connection_t * c)
 {
-    return;
+    crm_trace("Connection %p", c);
 }
 
-static gboolean
-pe_client_connect(IPC_Channel *client, gpointer user_data)
+gboolean process_pe_message(xmlNode * msg, xmlNode * xml_data, crm_client_t * sender);
+
+static int32_t
+pe_ipc_dispatch(qb_ipcs_connection_t * qbc, void *data, size_t size)
 {
-    crm_debug_3("Invoked");
+    uint32_t id = 0;
+    uint32_t flags = 0;
+    crm_client_t *c = crm_client_get(qbc);
+    xmlNode *msg = crm_ipcs_recv(c, data, size, &id, &flags);
+
+    crm_ipcs_send_ack(c, id, flags, "ack", __FUNCTION__, __LINE__);
+    if (msg != NULL) {
+        xmlNode *data = get_message_xml(msg, F_CRM_DATA);
+
+        process_pe_message(msg, data, c);
+        free_xml(msg);
+    }
+    return 0;
+}
+
+/* Error code means? */
+static int32_t
+pe_ipc_closed(qb_ipcs_connection_t * c)
+{
+    crm_client_t *client = crm_client_get(c);
+
     if (client == NULL) {
-	crm_err("Channel was NULL");
-
-    } else if (client->ch_status == IPC_DISCONNECT) {
-	crm_err("Channel was disconnected");
-
-    } else {
-	client->ops->set_recv_qlen(client, 1024);
-	client->ops->set_send_qlen(client, 1024);
-	G_main_add_IPC_Channel(
-	    G_PRIORITY_LOW, client, FALSE, pe_msg_callback, NULL, pe_connection_destroy);
+        return 0;
     }
-    
-    return TRUE;
+    crm_trace("Connection %p", c);
+    crm_client_destroy(client);
+    return 0;
 }
+
+static void
+pe_ipc_destroy(qb_ipcs_connection_t * c)
+{
+    crm_trace("Connection %p", c);
+    pe_ipc_closed(c);
+}
+
+struct qb_ipcs_service_handlers ipc_callbacks = {
+    .connection_accept = pe_ipc_accept,
+    .connection_created = pe_ipc_created,
+    .msg_process = pe_ipc_dispatch,
+    .connection_closed = pe_ipc_closed,
+    .connection_destroyed = pe_ipc_destroy
+};
+
+/* *INDENT-OFF* */
+static struct crm_option long_options[] = {
+    /* Top-level Options */
+    {"help",    0, 0, '?', "\tThis text"},
+    {"verbose", 0, 0, 'V', "\tIncrease debug output"},
+
+    {0, 0, 0, 0}
+};
+/* *INDENT-ON* */
 
 int
-main(int argc, char ** argv)
+main(int argc, char **argv)
 {
-	int flag;
-	int argerr = 0;
-	gboolean allow_cores = TRUE;
-	IPC_Channel *old_instance = NULL;
+    int flag;
+    int index = 0;
+    int argerr = 0;
 
-	crm_system_name = CRM_SYSTEM_PENGINE;
- 	mainloop_add_signal(SIGTERM, pengine_shutdown);
+    crm_log_preinit(NULL, argc, argv);
+    crm_set_options(NULL, "[options]",
+                    long_options, "Daemon for calculating the cluster's response to events");
 
-	while ((flag = getopt(argc, argv, OPTARGS)) != EOF) {
-		switch(flag) {
-			case 'V':
-				alter_debug(DEBUG_INC);
-				break;
-			case 'h':		/* Help message */
-				usage(crm_system_name, LSB_EXIT_OK);
-				break;
-			case 'c':
-				allow_cores = TRUE;
-				break;
-			default:
-				++argerr;
-				break;
-		}
-	}
+    mainloop_add_signal(SIGTERM, pengine_shutdown);
 
-	if(argc - optind == 1 && safe_str_eq("metadata", argv[optind])) {
-		pe_metadata();
-		return 0;
-	}
-	
-	if (optind > argc) {
-		++argerr;
-	}
+    while (1) {
+        flag = crm_get_option(argc, argv, &index);
+        if (flag == -1)
+            break;
 
-	if (argerr) {
-		usage(crm_system_name,LSB_EXIT_GENERIC);
-	}
+        switch (flag) {
+            case 'V':
+                crm_bump_log_level(argc, argv);
+                break;
+            case 'h':          /* Help message */
+                crm_help('?', EX_OK);
+                break;
+            default:
+                ++argerr;
+                break;
+        }
+    }
 
-	crm_log_init(CRM_SYSTEM_PENGINE, LOG_INFO, TRUE, FALSE, argc, argv);
+    if (argc - optind == 1 && safe_str_eq("metadata", argv[optind])) {
+        pe_metadata();
+        return 0;
+    }
 
-	if(crm_is_writable(PE_STATE_DIR, NULL, CRM_DAEMON_USER, CRM_DAEMON_GROUP, FALSE) == FALSE) {
-	    crm_err("Bad permissions on "PE_STATE_DIR". Terminating");
-	    fprintf(stderr,"ERROR: Bad permissions on "PE_STATE_DIR". See logs for details\n");
-	    fflush(stderr);
-	    return 100;
-	}
-    
-	ipc_server = crm_strdup(CRM_SYSTEM_PENGINE);
+    if (optind > argc) {
+        ++argerr;
+    }
 
-	/* find any previous instances and shut them down */
-	crm_debug("Checking for old instances of %s", crm_system_name);
-	old_instance = init_client_ipc_comms_nodispatch(CRM_SYSTEM_PENGINE);
-	while(old_instance != NULL) {
-	    xmlNode *cmd = create_request(
-		CRM_OP_QUIT, NULL, NULL, CRM_SYSTEM_PENGINE, CRM_SYSTEM_PENGINE, NULL);
+    if (argerr) {
+        crm_help('?', EX_USAGE);
+    }
 
-	    crm_warn("Terminating previous PE instance");
-	    send_ipc_message(old_instance, cmd);
-	    free_xml(cmd);
+    crm_log_init(NULL, LOG_INFO, TRUE, FALSE, argc, argv, FALSE);
+    if (crm_is_writable(PE_STATE_DIR, NULL, CRM_DAEMON_USER, CRM_DAEMON_GROUP, FALSE) == FALSE) {
+        crm_err("Bad permissions on " PE_STATE_DIR ". Terminating");
+        fprintf(stderr, "ERROR: Bad permissions on " PE_STATE_DIR ". See logs for details\n");
+        fflush(stderr);
+        return 100;
+    }
 
-	    sleep(2);
+    crm_debug("Init server comms");
+    ipcs = mainloop_add_ipc_server(CRM_SYSTEM_PENGINE, QB_IPC_SHM, &ipc_callbacks);
+    if (ipcs == NULL) {
+        crm_err("Failed to create IPC server: shutting down and inhibiting respawn");
+        crm_exit(DAEMON_RESPAWN_STOP);
+    }
 
-	    old_instance->ops->destroy(old_instance);
-	    old_instance = init_client_ipc_comms_nodispatch(CRM_SYSTEM_PENGINE);
-	}
-	
-	crm_debug("Init server comms");
-	if(init_server_ipc_comms(ipc_server, pe_client_connect,
-				 default_ipc_connection_destroy)) {
-	    crm_err("Couldn't start IPC server");
-	    return 1;
-	}
+    /* Create the mainloop and run it... */
+    crm_info("Starting %s", crm_system_name);
 
-	/* Create the mainloop and run it... */
-	crm_info("Starting %s", crm_system_name);
-	
-	mainloop = g_main_new(FALSE);
-	g_main_run(mainloop);
-	
-#if HAVE_LIBXML2
-	xmlCleanupParser();
-#endif
-		
-	crm_info("Exiting %s", crm_system_name);
-	return 0;
-}
+    mainloop = g_main_new(FALSE);
+    g_main_run(mainloop);
 
-
-void
-usage(const char* cmd, int exit_status)
-{
-	FILE* stream;
-
-	stream = exit_status ? stderr : stdout;
-
-	fprintf(stream, "usage: %s [-srkh]"
-		"[-c configure file]\n", cmd);
-/* 	fprintf(stream, "\t-d\tsets debug level\n"); */
-/* 	fprintf(stream, "\t-s\tgets daemon status\n"); */
-/* 	fprintf(stream, "\t-r\trestarts daemon\n"); */
-/* 	fprintf(stream, "\t-k\tstops daemon\n"); */
-/* 	fprintf(stream, "\t-h\thelp message\n"); */
-	fflush(stream);
-
-	exit(exit_status);
+    crm_info("Exiting %s", crm_system_name);
+    return crm_exit(pcmk_ok);
 }
 
 void
 pengine_shutdown(int nsig)
 {
-    crm_free(ipc_server);
-    exit(LSB_EXIT_OK);
+    mainloop_del_ipc_server(ipcs);
+    crm_exit(pcmk_ok);
 }
-

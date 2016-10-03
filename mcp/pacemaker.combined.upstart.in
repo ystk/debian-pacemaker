@@ -1,0 +1,73 @@
+# pacemaker-corosync - High-Availability cluster
+#
+# Starts Corosync cluster engine and Pacemaker cluster manager.
+
+# if you use automatic start, uncomment the line below.
+#start on started local and runlevel [2345]
+
+stop on runlevel [0123456]
+kill timeout 3600
+respawn
+
+env prog=pacemakerd
+env rpm_sysconf=@sysconfdir@/sysconfig/pacemaker
+env rpm_lockfile=@localstatedir@/lock/subsys/pacemaker
+env deb_sysconf=@sysconfdir@/default/pacemaker
+env deb_lockfile=@localstatedir@/lock/pacemaker
+
+script
+    [ -f "$rpm_sysconf" ] && . $rpm_sysconf
+    [ -f "$deb_sysconf" ] && . $deb_sysconf
+    exec $prog
+end script
+
+pre-start script
+    # setup the software watchdog which corosync uses.
+    # rewrite according to environment.
+    [ -c /dev/watchdog ] || modprobe softdog soft_margin=60
+    pidof corosync || start corosync
+
+    # if you use corosync-notifyd, uncomment the line below.
+    #start corosync-notifyd
+
+    # give it time to fail.
+    sleep 2
+    pidof corosync || { exit 1; }
+
+    # if you use crm_mon, uncomment the line below.
+    #start crm_mon
+end script
+
+post-start script
+    [ -f "$rpm_sysconf" ] && . $rpm_sysconf
+    [ -f "$deb_sysconf" ] && . $deb_sysconf
+    [ -z "$LOCK_FILE" -a -d @sysconfdir@/sysconfig ] && LOCK_FILE="$rpm_lockfile"
+    [ -z "$LOCK_FILE" -a -d @sysconfdir@/default ] && LOCK_FILE="$deb_lockfile"
+    touch $LOCK_FILE
+    pidof $prog > @localstatedir@/run/$prog.pid
+end script
+
+post-stop script
+    [ -f "$rpm_sysconf" ] && . $rpm_sysconf
+    [ -f "$deb_sysconf" ] && . $deb_sysconf
+    [ -z "$LOCK_FILE" -a -d @sysconfdir@/sysconfig ] && LOCK_FILE="$rpm_lockfile"
+    [ -z "$LOCK_FILE" -a -d @sysconfdir@/default ] && LOCK_FILE="$deb_lockfile"
+    rm -f $LOCK_FILE
+    rm -f @localstatedir@/run/$prog.pid
+
+    # if you use watchdog of corosync, uncomment the line below.
+    #pidof corosync || false
+
+    pidof crmd || stop corosync
+
+    # if you want to reboot a machine by watchdog of corosync when
+    # pacemakerd disappeared unexpectedly, uncomment the line below
+    # and invalidate above "respawn" stanza.
+    #pidof crmd && killall -q -9 corosync
+
+    # if you use crm_mon, uncomment the line below.
+    #stop crm_mon
+
+    # if you use corosync-notifyd, uncomment the line below.
+    #stop corosync-notifyd || true
+end script

@@ -17,7 +17,7 @@
 #
 MAINTAINERCLEANFILES    = Makefile.in
 
-INCLUDES        = -I$(top_builddir)/include  -I$(top_srcdir)/include  \
+AM_CPPFLAGS        = -I$(top_builddir)/include  -I$(top_srcdir)/include  \
 		  -I$(top_builddir)/libltdl  -I$(top_srcdir)/libltdl
 
 ## libraries
@@ -27,8 +27,9 @@ lib_LTLIBRARIES	= libtransitioner.la
 noinst_HEADERS		= 
 libtransitioner_la_SOURCES	= unpack.c graph.c utils.c
 
-libtransitioner_la_LDFLAGS	= -version-info 1:0:0
+libtransitioner_la_LDFLAGS	= -version-info 2:4:0
 libtransitioner_la_CFLAGS	= -I$(top_builddir)
+libtransitioner_la_LIBADD       = $(top_builddir)/lib/common/libcrmcommon.la
 
 clean-generic:
 	rm -f *~

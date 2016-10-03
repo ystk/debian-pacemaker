@@ -1,221 +1,234 @@
-/* 
+/*
  * Copyright (C) 2004 Andrew Beekhof <andrew@beekhof.net>
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- * 
- * This software is distributed in the hope that it will be useful,
+ *
+ * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include <crm_internal.h>
 
 #include <crm/pengine/rules.h>
 #include <crm/pengine/status.h>
+#include <crm/pengine/internal.h>
 #include <unpack.h>
-#include <utils.h>
 #include <crm/msg_xml.h>
-
 
 #define VARIANT_GROUP 1
 #include "./variant.h"
 
-gboolean group_unpack(resource_t *rsc, pe_working_set_t *data_set)
+gboolean
+group_unpack(resource_t * rsc, pe_working_set_t * data_set)
 {
-	resource_t *self = NULL;
-	xmlNode *xml_obj = rsc->xml;
-	xmlNode *xml_self = copy_xml(rsc->xml);
-	group_variant_data_t *group_data = NULL;
-	const char *group_ordered = g_hash_table_lookup(
-		rsc->meta, XML_RSC_ATTR_ORDERED);
-	const char *group_colocated = g_hash_table_lookup(
-		rsc->meta, "collocated");
-	const char *clone_id = NULL;
-	
-	crm_debug_3("Processing resource %s...", rsc->id);
+    xmlNode *xml_obj = rsc->xml;
+    xmlNode *xml_native_rsc = NULL;
+    group_variant_data_t *group_data = NULL;
+    const char *group_ordered = g_hash_table_lookup(rsc->meta, XML_RSC_ATTR_ORDERED);
+    const char *group_colocated = g_hash_table_lookup(rsc->meta, "collocated");
+    const char *clone_id = NULL;
 
-	crm_malloc0(group_data, sizeof(group_variant_data_t));
-	group_data->num_children = 0;
-	group_data->self	 = NULL;
-	group_data->first_child  = NULL;
-	group_data->last_child   = NULL;
-	rsc->variant_opaque = group_data;
+    pe_rsc_trace(rsc, "Processing resource %s...", rsc->id);
 
-	group_data->ordered   = TRUE;
-	group_data->colocated = TRUE;
+    group_data = calloc(1, sizeof(group_variant_data_t));
+    group_data->num_children = 0;
+    group_data->first_child = NULL;
+    group_data->last_child = NULL;
+    rsc->variant_opaque = group_data;
 
-	if(group_ordered != NULL) {
-		crm_str_to_boolean(group_ordered, &(group_data->ordered));
-	}
-	if(group_colocated != NULL) {
-		crm_str_to_boolean(group_colocated, &(group_data->colocated));
-	}
-	
-	/* this is a bit of a hack - but simplifies everything else */
-	xmlNodeSetName(xml_self, ((const xmlChar*)XML_CIB_TAG_RESOURCE));
-	if(common_unpack(xml_self, &self, NULL,  data_set)) {
-		group_data->self = self;
-		self->restart_type = pe_restart_restart;
+    group_data->ordered = TRUE;
+    group_data->colocated = TRUE;
 
-	} else {
-		crm_log_xml_err(xml_self, "Couldnt unpack dummy child");
-		return FALSE;
-	}
+    if (group_ordered != NULL) {
+        crm_str_to_boolean(group_ordered, &(group_data->ordered));
+    }
+    if (group_colocated != NULL) {
+        crm_str_to_boolean(group_colocated, &(group_data->colocated));
+    }
 
-	clone_id = crm_element_value(rsc->xml, XML_RSC_ATTR_INCARNATION);
-	
-	xml_child_iter_filter(
-		xml_obj, xml_native_rsc, XML_CIB_TAG_RESOURCE,
+    clone_id = crm_element_value(rsc->xml, XML_RSC_ATTR_INCARNATION);
 
-		resource_t *new_rsc = NULL;
-		crm_xml_add(xml_native_rsc, XML_RSC_ATTR_INCARNATION, clone_id);
-		if(common_unpack(xml_native_rsc, &new_rsc,
-				 rsc, data_set) == FALSE) {
-			pe_err("Failed unpacking resource %s",
-				crm_element_value(xml_obj, XML_ATTR_ID));
-			if(new_rsc != NULL && new_rsc->fns != NULL) {
-				new_rsc->fns->free(new_rsc);
-			}
-		}
+    for (xml_native_rsc = __xml_first_child(xml_obj); xml_native_rsc != NULL;
+         xml_native_rsc = __xml_next_element(xml_native_rsc)) {
+        if (crm_str_eq((const char *)xml_native_rsc->name, XML_CIB_TAG_RESOURCE, TRUE)) {
+            resource_t *new_rsc = NULL;
 
-		group_data->num_children++;
-		rsc->children = g_list_append(rsc->children, new_rsc);
-		
-		if(group_data->first_child == NULL) {
-			group_data->first_child = new_rsc;			
-		}
-		group_data->last_child = new_rsc;
-		print_resource(LOG_DEBUG_3, "Added", new_rsc, FALSE);
-		);
+            crm_xml_add(xml_native_rsc, XML_RSC_ATTR_INCARNATION, clone_id);
+            if (common_unpack(xml_native_rsc, &new_rsc, rsc, data_set) == FALSE) {
+                pe_err("Failed unpacking resource %s", crm_element_value(xml_obj, XML_ATTR_ID));
+                if (new_rsc != NULL && new_rsc->fns != NULL) {
+                    new_rsc->fns->free(new_rsc);
+                }
+            }
 
-	if(group_data->num_children == 0) {
+            group_data->num_children++;
+            rsc->children = g_list_append(rsc->children, new_rsc);
+
+            if (group_data->first_child == NULL) {
+                group_data->first_child = new_rsc;
+            }
+            group_data->last_child = new_rsc;
+            print_resource(LOG_DEBUG_3, "Added ", new_rsc, FALSE);
+        }
+    }
+
+    if (group_data->num_children == 0) {
 #if 0
-		/* Bug #1287 */
-		crm_config_err("Group %s did not have any children", rsc->id);
-		return FALSE;
+        /* Bug #1287 */
+        crm_config_err("Group %s did not have any children", rsc->id);
+        return FALSE;
 #else
-		crm_config_warn("Group %s did not have any children", rsc->id);
-		return TRUE;
+        crm_config_warn("Group %s did not have any children", rsc->id);
+        return TRUE;
 #endif
-	}
-	
-	crm_debug_3("Added %d children to resource %s...",
-		    group_data->num_children, rsc->id);
-	
-	return TRUE;
+    }
+
+    pe_rsc_trace(rsc, "Added %d children to resource %s...", group_data->num_children, rsc->id);
+
+    return TRUE;
 }
 
-
-gboolean group_active(resource_t *rsc, gboolean all)
+gboolean
+group_active(resource_t * rsc, gboolean all)
 {
-	gboolean c_all = TRUE;
-	gboolean c_any = FALSE;
-	group_variant_data_t *group_data = NULL;
-	get_group_variant_data(group_data, rsc);
+    gboolean c_all = TRUE;
+    gboolean c_any = FALSE;
+    GListPtr gIter = rsc->children;
 
-	slist_iter(
-		child_rsc, resource_t, rsc->children, lpc,
-		if(child_rsc->fns->active(child_rsc, all)) {
-		    c_any = TRUE;
-		} else {
-		    c_all = FALSE;		    
-		}
-		);
-	
-	if(c_any == FALSE) {
-	    return FALSE;
-	} else if(all && c_all == FALSE) {
-	    return FALSE;
-	}
-	return TRUE;
+    for (; gIter != NULL; gIter = gIter->next) {
+        resource_t *child_rsc = (resource_t *) gIter->data;
+
+        if (child_rsc->fns->active(child_rsc, all)) {
+            c_any = TRUE;
+        } else {
+            c_all = FALSE;
+        }
+    }
+
+    if (c_any == FALSE) {
+        return FALSE;
+    } else if (all && c_all == FALSE) {
+        return FALSE;
+    }
+    return TRUE;
 }
 
-void group_print(
-	resource_t *rsc, const char *pre_text, long options, void *print_data)
+static void
+group_print_xml(resource_t * rsc, const char *pre_text, long options, void *print_data)
 {
-	char *child_text = NULL;
-	group_variant_data_t *group_data = NULL;
-	get_group_variant_data(group_data, rsc);
+    GListPtr gIter = rsc->children;
+    char *child_text = crm_concat(pre_text, "    ", ' ');
 
-	if(pre_text == NULL) { pre_text = " "; }
-	child_text = crm_concat(pre_text, "   ", ' ');
-	
-	status_print("%sResource Group: %s",
-		     pre_text?pre_text:"", rsc->id);
+    status_print("%s<group id=\"%s\" ", pre_text, rsc->id);
+    status_print("number_resources=\"%d\" ", g_list_length(rsc->children));
+    status_print(">\n");
 
-	if(options & pe_print_html) {
-		status_print("\n<ul>\n");
+    for (; gIter != NULL; gIter = gIter->next) {
+        resource_t *child_rsc = (resource_t *) gIter->data;
 
-	} else if((options & pe_print_log) == 0) {
-		status_print("\n");
-	}
-	
-	slist_iter(
-		child_rsc, resource_t, rsc->children, lpc,
-		
-		if(options & pe_print_html) {
-			status_print("<li>\n");
-		}
-		child_rsc->fns->print(
-			child_rsc, child_text, options, print_data);
-		if(options & pe_print_html) {
-			status_print("</li>\n");
-		}
-		);
+        child_rsc->fns->print(child_rsc, child_text, options, print_data);
+    }
 
-	if(options & pe_print_html) {
-		status_print("</ul>\n");
-	}
-	crm_free(child_text);
+    status_print("%s</group>\n", pre_text);
+    free(child_text);
 }
 
-void group_free(resource_t *rsc)
+void
+group_print(resource_t * rsc, const char *pre_text, long options, void *print_data)
 {
-	group_variant_data_t *group_data = NULL;
-	CRM_CHECK(rsc != NULL, return);
-	get_group_variant_data(group_data, rsc);
+    char *child_text = NULL;
+    GListPtr gIter = rsc->children;
 
-	crm_debug_3("Freeing %s", rsc->id);
+    if (pre_text == NULL) {
+        pre_text = " ";
+    }
 
-	slist_iter(
-		child_rsc, resource_t, rsc->children, lpc,
+    if (options & pe_print_xml) {
+        group_print_xml(rsc, pre_text, options, print_data);
+        return;
+    }
 
-		crm_debug_3("Freeing child %s", child_rsc->id);
-		child_rsc->fns->free(child_rsc);
-		);
+    child_text = crm_concat(pre_text, "   ", ' ');
 
-	crm_debug_3("Freeing child list");
-	pe_free_shallow_adv(rsc->children, FALSE);
+    status_print("%sResource Group: %s", pre_text ? pre_text : "", rsc->id);
 
-	if(group_data->self != NULL) {
-		free_xml(group_data->self->xml);
-		group_data->self->fns->free(group_data->self);
-	}
+    if (options & pe_print_html) {
+        status_print("\n<ul>\n");
 
-	common_free(rsc);
+    } else if ((options & pe_print_log) == 0) {
+        status_print("\n");
+    }
+
+    if (options & pe_print_brief) {
+        print_rscs_brief(rsc->children, child_text, options, print_data, TRUE);
+
+    } else {
+        for (; gIter != NULL; gIter = gIter->next) {
+            resource_t *child_rsc = (resource_t *) gIter->data;
+
+            if (options & pe_print_html) {
+                status_print("<li>\n");
+            }
+            child_rsc->fns->print(child_rsc, child_text, options, print_data);
+            if (options & pe_print_html) {
+                status_print("</li>\n");
+            }
+        }
+    }
+
+    if (options & pe_print_html) {
+        status_print("</ul>\n");
+    }
+    free(child_text);
+}
+
+void
+group_free(resource_t * rsc)
+{
+    GListPtr gIter = rsc->children;
+
+    CRM_CHECK(rsc != NULL, return);
+
+    pe_rsc_trace(rsc, "Freeing %s", rsc->id);
+
+    for (; gIter != NULL; gIter = gIter->next) {
+        resource_t *child_rsc = (resource_t *) gIter->data;
+
+        CRM_ASSERT(child_rsc);
+        pe_rsc_trace(child_rsc, "Freeing child %s", child_rsc->id);
+        child_rsc->fns->free(child_rsc);
+    }
+
+    pe_rsc_trace(rsc, "Freeing child list");
+    g_list_free(rsc->children);
+
+    common_free(rsc);
 }
 
 enum rsc_role_e
-group_resource_state(const resource_t *rsc, gboolean current)
+group_resource_state(const resource_t * rsc, gboolean current)
 {
-	enum rsc_role_e group_role = RSC_ROLE_UNKNOWN;
+    enum rsc_role_e group_role = RSC_ROLE_UNKNOWN;
+    GListPtr gIter = rsc->children;
 
-	slist_iter(
-		child_rsc, resource_t, rsc->children, lpc,
-		enum rsc_role_e role = child_rsc->fns->state(child_rsc, current);
-		if(role > group_role) {
-			group_role = role;
-		}
-	    );
+    for (; gIter != NULL; gIter = gIter->next) {
+        resource_t *child_rsc = (resource_t *) gIter->data;
+        enum rsc_role_e role = child_rsc->fns->state(child_rsc, current);
 
-	crm_debug_3("%s role: %s", rsc->id, role2text(group_role));
-	return group_role;
+        if (role > group_role) {
+            group_role = role;
+        }
+    }
+
+    pe_rsc_trace(rsc, "%s role: %s", rsc->id, role2text(group_role));
+    return group_role;
 }

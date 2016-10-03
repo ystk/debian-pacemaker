@@ -1,7 +1,7 @@
 '''CTS: Cluster Testing System: Audit module
  '''
 
-__copyright__='''
+__copyright__ = '''
 Copyright (C) 2000, 2001,2005 Alan Robertson <alanr@unix.sh>
 Licensed under the GNU GPL.
 '''
@@ -19,10 +19,11 @@ Licensed under the GNU GPL.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
 
-import time, os, string, re
-import CTS
+import time, re, uuid
+from watcher import LogWatcher
+
 
 class ClusterAudit:
 
@@ -48,6 +49,7 @@ class ClusterAudit:
 
 AllAuditClasses = [ ]
 
+
 class LogAudit(ClusterAudit):
 
     def name(self):
@@ -55,76 +57,78 @@ class LogAudit(ClusterAudit):
 
     def __init__(self, cm):
         self.CM = cm
+        self.kinds = [ "combined syslog", "journal", "remote" ]
 
     def RestartClusterLogging(self, nodes=None):
         if not nodes:
             nodes = self.CM.Env["nodes"]
 
-        self.CM.log("Restarting logging on: %s" % repr(nodes))
+        self.CM.debug("Restarting logging on: %s" % repr(nodes))
 
         for node in nodes:
-            cmd=self.CM.Env["logrestartcmd"]
-            if self.CM.rsh(node, cmd, synchronous=0) != 0:
-                self.CM.log ("ERROR: Cannot restart logging on %s [%s failed]" % (node, cmd))
+            if self.CM.Env["have_systemd"]:
+                if self.CM.rsh(node, "systemctl stop systemd-journald.socket") != 0:
+                    self.CM.log ("ERROR: Cannot stop 'systemd-journald' on %s" % node)
+                if self.CM.rsh(node, "systemctl start systemd-journald.service") != 0:
+                    self.CM.log ("ERROR: Cannot start 'systemd-journald' on %s" % node)
+
+            if self.CM.rsh(node, "service %s restart" % self.CM.Env["syslogd"]) != 0:
+                self.CM.log ("ERROR: Cannot restart '%s' on %s" % (self.CM.Env["syslogd"], node))
 
     def TestLogging(self):
         patterns = []
         prefix   = "Test message from"
-        watch_syslog = None
-        watch_remote = None
+        suffix   = str(uuid.uuid4())
+        watch    = {}
 
         for node in self.CM.Env["nodes"]:
             # Look for the node name in two places to make sure 
             # that syslog is logging with the correct hostname
-            patterns.append("%s.*%s %s" % (node, prefix, node))
+            m = re.search("^([^.]+).*", node)
+            if m:
+                simple = m.group(1)
+            else:
+                simple = node
+            patterns.append("%s.*%s %s %s" % (simple, prefix, node, suffix))
 
         watch_pref = self.CM.Env["LogWatcher"]
-        if watch_pref == "any" or watch_pref == "syslog":
-            self.CM.Env["LogWatcher"] = "syslog"
-            if watch_pref == "any": self.CM.log("Testing for %s logs" % self.CM.Env["LogWatcher"])
-            watch_syslog = CTS.LogWatcher(self.CM.Env, self.CM.Env["LogFileName"], patterns, "LogAudit", 30, silent=True)
-            watch_syslog.setwatch()
+        if watch_pref == "any": 
+            for k in self.kinds:
+                watch[k] = LogWatcher(self.CM.Env["LogFileName"], patterns, "LogAudit", 5, silent=True, hosts=self.CM.Env["nodes"], kind=k)
+                watch[k].setwatch()
+        else:
+            k = watch_pref
+            watch[k] = LogWatcher(self.CM.Env["LogFileName"], patterns, "LogAudit", 5, silent=True, hosts=self.CM.Env["nodes"], kind=k)
+            watch[k].setwatch()
 
-        if watch_pref == "any" or watch_pref == "remote":
-            self.CM.Env["LogWatcher"] = "remote"
-            if watch_pref == "any": self.CM.log("Testing for %s logs" % self.CM.Env["LogWatcher"])
-            watch_remote = CTS.LogWatcher(self.CM.Env, self.CM.Env["LogFileName"], patterns, "LogAudit", 30, silent=True)
-            watch_remote.setwatch()
-
+        if watch_pref == "any": self.CM.log("Writing log with key: %s" % (suffix))
         for node in self.CM.Env["nodes"]:
-            cmd="logger -p %s.info %s %s" % (self.CM.Env["SyslogFacility"], prefix, node)
+            cmd = "logger -p %s.info %s %s %s" % (self.CM.Env["SyslogFacility"], prefix, node, suffix)
             if self.CM.rsh(node, cmd, synchronous=0, silent=True) != 0:
                 self.CM.log ("ERROR: Cannot execute remote command [%s] on %s" % (cmd, node))
 
-        if watch_syslog:
-            watch = watch_syslog
-            self.CM.Env["LogWatcher"] = "syslog"
-            watch_result = watch.lookforall(silent=True)
-            if not watch.unmatched:
-                if watch_pref == "any": self.CM.log ("Continuing with %s-based log reader" % (self.CM.Env["LogWatcher"]))
-                return 1
+        for k in self.kinds:
+            if k in watch:
+                w = watch[k]
+                if watch_pref == "any": self.CM.log("Testing for %s logs" % (k))
+                w.lookforall(silent=True)
+                if not w.unmatched:
+                    if watch_pref == "any": 
+                        self.CM.log ("Continuing with %s-based log reader" % (w.kind))
+                        self.CM.Env["LogWatcher"] = w.kind
+                    return 1
 
-        if watch_remote:
-            watch = watch_remote
-            self.CM.Env["LogWatcher"] = "remote"
-            watch_result = watch.lookforall(silent=True)
-            if not watch.unmatched:
-                if watch_pref == "any": self.CM.log ("Continuing with %s-based log reader" % (self.CM.Env["LogWatcher"]))
-                return 1
-
-        if watch_syslog and not watch_syslog.unmatched:
-            for regex in watch_syslog.unmatched:
-                self.CM.log ("Test message [%s] not found in syslog logs." % regex)
-
-        if watch_remote and not watch_remote.unmatched:
-            for regex in watch_remote.unmatched:
-                self.CM.log ("Test message [%s] not found in remote logs." % regex)
+        for k in list(watch.keys()):
+            w = watch[k]
+            if w.unmatched:
+                for regex in w.unmatched:
+                    self.CM.log ("Test message [%s] not found in %s logs." % (regex, w.kind))
 
         return 0
 
     def __call__(self):
-        max=3
-        attempt=0
+        max = 3
+        attempt = 0
 
         self.CM.ns.WaitForAllNodesToComeUp(self.CM.Env["nodes"])
         while attempt <= max and self.TestLogging() == 0:
@@ -141,7 +145,10 @@ class LogAudit(ClusterAudit):
     def is_applicable(self):
         if self.CM.Env["DoBSC"]:
             return 0
+        if self.CM.Env["LogAuditDisabled"]:
+            return 0
         return 1
+
 
 class DiskAudit(ClusterAudit):
 
@@ -152,31 +159,103 @@ class DiskAudit(ClusterAudit):
         self.CM = cm
 
     def __call__(self):
-        result=1
-        dfcmd="df -k /var/log | tail -1 | tr -s ' ' | cut -d' ' -f2"
+        result = 1
+        dfcmd = "df -BM /var/log | tail -1 | awk '{print $(NF-1)\" \"$(NF-2)}' | tr -d 'M%'"
 
         self.CM.ns.WaitForAllNodesToComeUp(self.CM.Env["nodes"])
         for node in self.CM.Env["nodes"]:
-            dfout=self.CM.rsh(node, dfcmd, 1)
+            dfout = self.CM.rsh(node, dfcmd, 1)
             if not dfout:
                 self.CM.log ("ERROR: Cannot execute remote df command [%s] on %s" % (dfcmd, node))
             else:
                 try:
-                    idfout = int(dfout)
+                    (used, remain) = dfout.split()
+                    used_percent = int(used)
+                    remaining_mb = int(remain)
                 except (ValueError, TypeError):
-                    self.CM.log("Warning: df output from %s was invalid [%s]" % (node, dfout))
+                    self.CM.log("Warning: df output '%s' from %s was invalid [%s, %s]"
+                                % (dfout, node, used, remain))
                 else:
-                    if idfout == 0:
-                        self.CM.log("CRIT: Completely out of log disk space on %s" % node)
-                        result=None
-                    elif idfout <= 1000:
-                        self.CM.log("WARN: Low on log disk space (%d Mbytes) on %s" % (idfout, node))
+                    if remaining_mb < 10 or used_percent > 95:
+                        self.CM.log("CRIT: Out of log disk space on %s (%d%% / %dMb)"
+                                    % (node, used_percent, remaining_mb))
+                        result = None
+                        if self.CM.Env["continue"] == 1:
+                            answer = "Y"
+                        else:
+                            try:
+                                answer = raw_input('Continue? [nY]')
+                            except EOFError, e:
+                                answer = "n"
+
+                        if answer and answer == "n":
+                            raise ValueError("Disk full on %s" % (node))
+                            ret = 0
+
+                    elif remaining_mb < 100 or used_percent > 90:
+                        self.CM.log("WARN: Low on log disk space (%d Mbytes) on %s" % (remaining_mb, node))
         return result
     
     def is_applicable(self):
         if self.CM.Env["DoBSC"]:
             return 0
         return 1
+
+
+class FileAudit(ClusterAudit):
+
+    def name(self):
+        return "FileAudit"
+
+    def __init__(self, cm):
+        self.CM = cm
+        self.known = []
+
+    def __call__(self):
+        result = 1
+
+        self.CM.ns.WaitForAllNodesToComeUp(self.CM.Env["nodes"])
+        for node in self.CM.Env["nodes"]:
+
+            (rc, lsout) = self.CM.rsh(node, "ls -al /var/lib/heartbeat/cores/* | grep core.[0-9]", None)
+            for line in lsout:
+                line = line.strip()
+                if line not in self.known:
+                    result = 0
+                    self.known.append(line)
+                    self.CM.log("Warning: Pacemaker core file on %s: %s" % (node, line))
+
+            (rc, lsout) = self.CM.rsh(node, "ls -al /var/lib/corosync | grep core.[0-9]", None)
+            for line in lsout:
+                line = line.strip()
+                if line not in self.known:
+                    result = 0
+                    self.known.append(line)
+                    self.CM.log("Warning: Corosync core file on %s: %s" % (node, line))
+
+            if node in self.CM.ShouldBeStatus and self.CM.ShouldBeStatus[node] == "down":
+                clean = 0
+                (rc, lsout) = self.CM.rsh(node, "ls -al /dev/shm | grep qb-", None)
+                for line in lsout:
+                    result = 0
+                    clean = 1
+                    self.CM.log("Warning: Stale IPC file on %s: %s" % (node, line))
+
+                if clean:
+                    (rc, lsout) = self.CM.rsh(node, "ps axf | grep -e pacemaker -e corosync", None)
+                    for line in lsout:
+                        self.CM.debug("ps[%s]: %s" % (node, line))
+
+                    self.CM.rsh(node, "rm -f /dev/shm/qb-*")
+
+            else:
+                self.CM.debug("Skipping %s" % node)
+
+        return result
+    
+    def is_applicable(self):
+        return 1
+
 
 class AuditResource:
     def __init__(self, cm, line):
@@ -213,6 +292,7 @@ class AuditResource:
             return 1
         return 0
             
+
 class AuditConstraint:
     def __init__(self, cm, line):
         fields = line.split()
@@ -231,6 +311,7 @@ class AuditConstraint:
         if self.target_role == "NA":
             self.target_role = None
 
+
 class PrimitiveAudit(ClusterAudit):
     def name(self):
         return "PrimitiveAudit"
@@ -239,7 +320,7 @@ class PrimitiveAudit(ClusterAudit):
         self.CM = cm
 
     def doResourceAudit(self, resource, quorum):
-        rc=1
+        rc = 1
         active = self.CM.ResourceLocation(resource.id)
 
         if len(active) == 1:
@@ -249,7 +330,7 @@ class PrimitiveAudit(ClusterAudit):
             elif resource.needs_quorum == 1:
                 self.CM.log("Resource %s active without quorum: %s" 
                             % (resource.id, repr(active)))
-                rc=0
+                rc = 0
 
         elif not resource.managed():
             self.CM.log("Resource %s not managed. Active on %s"
@@ -266,14 +347,14 @@ class PrimitiveAudit(ClusterAudit):
         elif len(active) > 1:
             self.CM.log("Resource %s is active multiple times: %s" 
                         % (resource.id, repr(active)))
-            rc=0
+            rc = 0
             
         elif resource.orphan():
             self.debug("Resource %s is an inactive orphan" % resource.id)
 
         elif len(self.inactive_nodes) == 0:
             self.CM.log("WARN: Resource %s not served anywhere" % resource.id)
-            rc=0
+            rc = 0
 
         elif self.CM.Env["warn-inactive"] == 1:
             if quorum or not resource.needs_quorum:
@@ -344,6 +425,7 @@ class PrimitiveAudit(ClusterAudit):
             return 1
         return 0
 
+
 class GroupAudit(PrimitiveAudit):
     def name(self):
         return "GroupAudit"
@@ -386,6 +468,7 @@ class GroupAudit(PrimitiveAudit):
 
         return rc
     
+
 class CloneAudit(PrimitiveAudit):
     def name(self):
         return "CloneAudit"
@@ -407,6 +490,7 @@ class CloneAudit(PrimitiveAudit):
 
         return rc
     
+
 class ColocationAudit(PrimitiveAudit):
     def name(self):
         return "ColocationAudit"
@@ -444,6 +528,7 @@ class ColocationAudit(PrimitiveAudit):
 
         return rc
 
+
 class CrmdStateAudit(ClusterAudit):
     def __init__(self, cm):
         self.CM = cm
@@ -454,7 +539,7 @@ class CrmdStateAudit(ClusterAudit):
         ,        "auditfail":0}
 
     def has_key(self, key):
-        return self.Stats.has_key(key)
+        return key in self.Stats
 
     def __setitem__(self, key, value):
         self.Stats[key] = value
@@ -464,8 +549,8 @@ class CrmdStateAudit(ClusterAudit):
 
     def incr(self, name):
         '''Increment (or initialize) the value associated with the given name'''
-        if not self.Stats.has_key(name):
-            self.Stats[name]=0
+        if not name in self.Stats:
+            self.Stats[name] = 0
         self.Stats[name] = self.Stats[name]+1
 
     def __call__(self):
@@ -488,17 +573,17 @@ class CrmdStateAudit(ClusterAudit):
         if len(unstable_list) > 0:
             passed = 0
             self.CM.log("Cluster is not stable: %d (of %d): %s" 
-                     %(len(unstable_list), self.CM.upcount(), repr(unstable_list)))
+                     % (len(unstable_list), self.CM.upcount(), repr(unstable_list)))
 
         if up_are_down > 0:
             passed = 0
             self.CM.log("%d (of %d) nodes expected to be up were down."
-                     %(up_are_down, len(self.CM.Env["nodes"])))
+                     % (up_are_down, len(self.CM.Env["nodes"])))
 
         if down_are_up > 0:
             passed = 0
             self.CM.log("%d (of %d) nodes expected to be down were up." 
-                     %(down_are_up, len(self.CM.Env["nodes"])))
+                     % (down_are_up, len(self.CM.Env["nodes"])))
             
         return passed
 
@@ -512,6 +597,7 @@ class CrmdStateAudit(ClusterAudit):
             return 1
         return 0
 
+
 class CIBAudit(ClusterAudit):
     def __init__(self, cm):
         self.CM = cm
@@ -522,7 +608,7 @@ class CIBAudit(ClusterAudit):
         ,        "auditfail":0}
 
     def has_key(self, key):
-        return self.Stats.has_key(key)
+        return key in self.Stats
 
     def __setitem__(self, key, value):
         self.Stats[key] = value
@@ -532,8 +618,8 @@ class CIBAudit(ClusterAudit):
     
     def incr(self, name):
         '''Increment (or initialize) the value associated with the given name'''
-        if not self.Stats.has_key(name):
-            self.Stats[name]=0
+        if not name in self.Stats:
+            self.Stats[name] = 0
         self.Stats[name] = self.Stats[name]+1
 
     def __call__(self):
@@ -545,7 +631,7 @@ class CIBAudit(ClusterAudit):
             return 1
         
         for partition in ccm_partitions:
-            self.debug("\tAuditing CIB consistency for: %s" %partition)
+            self.debug("\tAuditing CIB consistency for: %s" % partition)
             partition_passed = 0
             if self.audit_cib_contents(partition) == 0:
                 passed = 0
@@ -594,7 +680,7 @@ class CIBAudit(ClusterAudit):
                 
     def store_remote_cib(self, node, target):
         combined = ""
-        filename="/tmp/ctsaudit.%s.xml" % node
+        filename = "/tmp/ctsaudit.%s.xml" % node
 
         if not target:
             target = node
@@ -623,6 +709,7 @@ class CIBAudit(ClusterAudit):
             return 1
         return 0
 
+
 class PartitionAudit(ClusterAudit):
     def __init__(self, cm):
         self.CM = cm
@@ -631,9 +718,9 @@ class PartitionAudit(ClusterAudit):
         ,        "failure":0
         ,        "skipped":0
         ,        "auditfail":0}
-        self.NodeEpoche={}
-        self.NodeState={}
-        self.NodeQuorum={}
+        self.NodeEpoch = {}
+        self.NodeState = {}
+        self.NodeQuorum = {}
 
     def has_key(self, key):
         return self.Stats.has_key(key)
@@ -646,8 +733,8 @@ class PartitionAudit(ClusterAudit):
     
     def incr(self, name):
         '''Increment (or initialize) the value associated with the given name'''
-        if not self.Stats.has_key(name):
-            self.Stats[name]=0
+        if not name in self.Stats:
+            self.Stats[name] = 0
         self.Stats[name] = self.Stats[name]+1
 
     def __call__(self):
@@ -660,10 +747,10 @@ class PartitionAudit(ClusterAudit):
         self.CM.cluster_stable(double_check=True)
 
         if len(ccm_partitions) != self.CM.partitions_expected:
-            self.CM.log("ERROR: %d cluster partitions detected:" %len(ccm_partitions))
+            self.CM.log("ERROR: %d cluster partitions detected:" % len(ccm_partitions))
             passed = 0
             for partition in ccm_partitions:
-                self.CM.log("\t %s" %partition)
+                self.CM.log("\t %s" % partition)
 
         for partition in ccm_partitions:
             partition_passed = 0
@@ -688,68 +775,67 @@ class PartitionAudit(ClusterAudit):
         passed = 1
         dc_found = []
         dc_allowed_list = []
-        lowest_epoche = None
+        lowest_epoch = None
         node_list = partition.split()
 
-        self.debug("Auditing partition: %s" %(partition))
+        self.debug("Auditing partition: %s" % (partition))
         for node in node_list:
             if self.CM.ShouldBeStatus[node] != "up":
-                self.CM.log("Warn: Node %s appeared out of nowhere" %(node))
+                self.CM.log("Warn: Node %s appeared out of nowhere" % (node))
                 self.CM.ShouldBeStatus[node] = "up"
                 # not in itself a reason to fail the audit (not what we're
                 #  checking for in this audit)
 
-            self.NodeState[node]  = self.CM.rsh(node, self.CM["StatusCmd"]%node, 1)
-            self.NodeEpoche[node] = self.CM.rsh(node, self.CM["EpocheCmd"], 1)
+            self.NodeState[node]  = self.CM.rsh(node, self.CM["StatusCmd"] % node, 1)
+            self.NodeEpoch[node] = self.CM.rsh(node, self.CM["EpochCmd"], 1)
             self.NodeQuorum[node] = self.CM.rsh(node, self.CM["QuorumCmd"], 1)
             
-            self.debug("Node %s: %s - %s - %s." %(node, self.NodeState[node], self.NodeEpoche[node], self.NodeQuorum[node]))
+            self.debug("Node %s: %s - %s - %s." % (node, self.NodeState[node], self.NodeEpoch[node], self.NodeQuorum[node]))
             self.NodeState[node]  = self.trim_string(self.NodeState[node])
-            self.NodeEpoche[node] = self.trim2int(self.NodeEpoche[node])
+            self.NodeEpoch[node] = self.trim2int(self.NodeEpoch[node])
             self.NodeQuorum[node] = self.trim_string(self.NodeQuorum[node])
 
-            if not self.NodeEpoche[node]:
-                self.CM.log("Warn: Node %s dissappeared: cant determin epoche" %(node))
+            if not self.NodeEpoch[node]:
+                self.CM.log("Warn: Node %s dissappeared: cant determin epoch" % (node))
                 self.CM.ShouldBeStatus[node] = "down"
                 # not in itself a reason to fail the audit (not what we're
                 #  checking for in this audit)
-            elif lowest_epoche == None or self.NodeEpoche[node] < lowest_epoche:
-                lowest_epoche = self.NodeEpoche[node]
+            elif lowest_epoch == None or self.NodeEpoch[node] < lowest_epoch:
+                lowest_epoch = self.NodeEpoch[node]
                 
-        if not lowest_epoche:
-            self.CM.log("Lowest epoche not determined in %s" % (partition))
+        if not lowest_epoch:
+            self.CM.log("Lowest epoch not determined in %s" % (partition))
             passed = 0
 
         for node in node_list:
             if self.CM.ShouldBeStatus[node] == "up":
                 if self.CM.is_node_dc(node, self.NodeState[node]):
                     dc_found.append(node)
-                    if self.NodeEpoche[node] == lowest_epoche:
+                    if self.NodeEpoch[node] == lowest_epoch:
                         self.debug("%s: OK" % node)
-                    elif not self.NodeEpoche[node]:
-                        self.debug("Check on %s ignored: no node epoche" % node)
-                    elif not lowest_epoche:
-                        self.debug("Check on %s ignored: no lowest epoche" % node)
+                    elif not self.NodeEpoch[node]:
+                        self.debug("Check on %s ignored: no node epoch" % node)
+                    elif not lowest_epoch:
+                        self.debug("Check on %s ignored: no lowest epoch" % node)
                     else:
                         self.CM.log("DC %s is not the oldest node (%d vs. %d)"
-                            %(node, self.NodeEpoche[node], lowest_epoche))
+                            % (node, self.NodeEpoch[node], lowest_epoch))
                         passed = 0
 
         if len(dc_found) == 0:
             self.CM.log("DC not found on any of the %d allowed nodes: %s (of %s)"
-                        %(len(dc_allowed_list), str(dc_allowed_list), str(node_list)))
+                        % (len(dc_allowed_list), str(dc_allowed_list), str(node_list)))
 
         elif len(dc_found) > 1:
             self.CM.log("%d DCs (%s) found in cluster partition: %s"
-                        %(len(dc_found), str(dc_found), str(node_list)))
+                        % (len(dc_found), str(dc_found), str(node_list)))
             passed = 0
 
         if passed == 0:
             for node in node_list:
                 if self.CM.ShouldBeStatus[node] == "up":
-                    self.CM.log("epoche %s : %s"  
-                                %(self.NodeEpoche[node], self.NodeState[node]))
-
+                    self.CM.log("epoch %s : %s"  
+                                % (self.NodeEpoch[node], self.NodeState[node]))
 
         return passed
 
@@ -764,6 +850,7 @@ class PartitionAudit(ClusterAudit):
         return 0
 
 AllAuditClasses.append(DiskAudit)
+AllAuditClasses.append(FileAudit)
 AllAuditClasses.append(LogAudit)
 AllAuditClasses.append(CrmdStateAudit)
 AllAuditClasses.append(PartitionAudit)
@@ -772,6 +859,7 @@ AllAuditClasses.append(GroupAudit)
 AllAuditClasses.append(CloneAudit)
 AllAuditClasses.append(ColocationAudit)
 AllAuditClasses.append(CIBAudit)
+
 
 def AuditList(cm):
     result = []

@@ -20,13 +20,15 @@
 #
 #######################################################################
 
-. ${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs
+: ${OCF_FUNCTIONS=${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs}
+. ${OCF_FUNCTIONS}
+: ${__OCF_ACTION=$1}
 
 : ${OCF_RESKEY_stack:="pcmk"}
 : ${OCF_RESKEY_sysfs:="/sys/fs"}
 : ${OCF_RESKEY_configfs:="/sys/kernel/config"}
 : ${OCF_RESKEY_daemon_timeout:="10"} # How long to wait for things to start
-: ${OCF_RESKEY_CRM_meta_gloablly_unique:="false"}
+: ${OCF_RESKEY_CRM_meta_globally_unique:="false"}
 
 DAEMON="/usr/sbin/ocfs2_controld.${OCF_RESKEY_stack}"
 CLUSTER_STACK_FILE="${OCF_RESKEY_sysfs}/ocfs2/cluster_stack"
@@ -162,7 +164,7 @@ kill_daemon()
 {
     status_daemon; rc=$?
     if [ $rc != $OCF_SUCCESS ]; then
-	return rc
+	return $rc
     fi
 
     ocf_log info "Stopping `basename "$DAEMON"`"
@@ -311,7 +313,7 @@ o2cb_stop() {
 	return $OCF_ERR_GENERIC
     fi
 
-    # Dont unmount configfs - its always in use by libdlm
+    # Don't unmount configfs - its always in use by libdlm
 }
 
 o2cb_monitor() {
@@ -321,7 +323,7 @@ o2cb_monitor() {
 
     driver_filesystem configfs; rc=$?
     if [ $rc != 0 ]; then
-	ocf_log info "configfs not laoded"
+	ocf_log info "configfs not loaded"
 	return $OCF_NOT_RUNNING
     fi
 
@@ -361,9 +363,9 @@ o2cb_usage() {
 o2cb_validate() {
     check_binary ${DAEMON}
 
-    case ${OCF_RESKEY_CRM_meta_gloablly_unique} in
+    case ${OCF_RESKEY_CRM_meta_globally_unique} in
 	yes|Yes|true|True|1) 
-	    ocf_log err "$OCF_RESOURCE_INSTANCE must be configured with the gloablly_unique=false meta attribute"
+	    ocf_log err "$OCF_RESOURCE_INSTANCE must be configured with the globally_unique=false meta attribute"
 	    exit $OCF_ERR_CONFIGURED
 	    ;;
     esac
@@ -375,12 +377,11 @@ meta_data() {
 	cat <<END
 <?xml version="1.0"?>
 <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
-<resource-agent name="pingd">
+<resource-agent name="o2cb">
   <version>1.0</version>
-  <shortdesc lang="en">pingd resource agent</shortdesc>
+  <shortdesc lang="en">OCFS2 daemon resource agent</shortdesc>
   <longdesc lang="en">
-This is a pingd Resource Agent.
-It records (in the CIB) the current number of ping nodes a node can connect to.
+This Resource Agent controls the userspace daemon needed by OCFS2.
   </longdesc>
   <parameters>
 

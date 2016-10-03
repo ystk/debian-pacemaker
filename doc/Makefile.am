@@ -7,32 +7,45 @@
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #
-MAINTAINERCLEANFILES    = Makefile.in
+include $(top_srcdir)/Makefile.common
 
 helpdir		= $(datadir)/$(PACKAGE)
 
-ascii		= crm_cli.txt crm_fencing.txt
-help_DATA	= crm_cli.txt
-docbook		= Pacemaker_Explained
-man_MANS	= cibadmin.8 crm_resource.8
-doc_DATA	= README.hb2openais $(ascii) $(generated_docs)
+ascii		= crm_fencing.txt acls.txt
+docbook		= Pacemaker_Explained Clusters_from_Scratch Pacemaker_Remote
+doc_DATA	= $(ascii) $(generated_docs)
 
-publican_docs    =
-generated_docs	= 
+# rsync destination for www targets
+RSYNC_DEST      = root@www.clusterlabs.org:/var/www/html/doc/
 
-SVG := $(wildcard */en-US/images/pcmk-*.svg)
+publican_docs   =
+generated_docs	=
+generated_mans	=
 
-PNGS = $(SVG:%.svg=%-small.png) $(SVG:%.svg=%.png)  $(SVG:%.svg=%-large.png)	\
+ASCIIDOC_CLI_TYPE := pcs
+DOCBOOK_FORMATS := html-desktop
+DOCBOOK_LANGS   := en-US
+DOTs = $(wildcard */en-US/images/*.dot)
+SVG = $(wildcard */en-US/images/pcmk-*.svg) $(DOTs:%.dot=%.svg)
+
+generated_PNGS = $(SVG:%.svg=%-small.png) $(SVG:%.svg=%.png)  $(SVG:%.svg=%-large.png) 	\
+	Pacemaker_Explained/en-US/images/Policy-Engine-big.png  \
+	Pacemaker_Explained/en-US/images/Policy-Engine-small.png
+PNGS = $(generated_PNGS) \
+	Pacemaker_Remote/en-US/images/pcmk-ha-cluster-stack.png \
+	Pacemaker_Remote/en-US/images/pcmk-ha-remote-stack.png
+
+BRAND_PNGS = publican-clusterlabs/en-US/images/title_logo.png			\
 	publican-clusterlabs/en-US/images/image_left.png			\
 	publican-clusterlabs/en-US/images/image_right.png			\
 	publican-clusterlabs/en-US/images/h1-bg.png
@@ -40,88 +53,154 @@ PNGS = $(SVG:%.svg=%-small.png) $(SVG:%.svg=%.png)  $(SVG:%.svg=%-large.png)	\
 graphics: $(PNGS)
 
 %.png: %.svg
-	inkscape --file=$< --export-dpi=90 -C --export-png=$@
+	$(AM_V_IMG)$(INKSCAPE) --file=$< --export-dpi=90 -C --export-png=$@
 
 %-small.png: %.svg
-	inkscape --file=$< --export-dpi=45 -C --export-png=$@
+	$(AM_V_IMG)$(INKSCAPE) --file=$< --export-dpi=45 -C --export-png=$@
 
 %-large.png: %.svg
-	inkscape --file=$< --export-dpi=180 -C --export-png=$@
-
-XML_FILES := $(wildcard *.xml)
-PNG_FILES := $(wildcard images/*.png)
+	$(AM_V_IMG)$(INKSCAPE) --file=$< --export-dpi=180 -C --export-png=$@
 
 if BUILD_ASCIIDOC
 generated_docs	+= $(ascii:%.txt=%.html)
-endif
 
 if BUILD_DOCBOOK
 publican_docs	+= $(docbook)
 endif
-
-EXTRA_DIST	= $(man_MANS) $(docbook:%=%.xml) 
-
-index.html: 
-	echo "Building documentation index"
-	echo "<html><body><p>The following <a href=\"http://www.clusterlabs.org/wiki/Pacemaker\">Pacemaker</a> documentation was generated on `date` from version: $(BUILD_VERSION)</p>" > index.html	
-	echo "<ol>" >> index.html
-	for doc in $(generated_docs); do 					\
-		echo "<li><a href=\"$$doc\">$$doc</a></li>" >> index.html; 	\
-	done
-if BUILD_DOCBOOK
-	for book in $(docbook); do 					\
-	    for lang in `ls -1 $(docbook)/publish`; do 			\
-	      echo "<li>$$book ($$lang)<ul>" >> index.html; 	\
-	      find $$book/publish/$$lang -name "*.pdf" -exec echo -n "<li><a href=\"{}\">" \; -exec basename {} \; -exec echo "</a></li>" \; | sed s:$$book/publish/:: >> index.html ;		\
-	      find $$book/publish/$$lang -name "*.txt" -exec echo -n "<li><a href=\"{}\">" \; -exec basename {} \; -exec echo "</a></li>" \; | sed s:$$book/publish/:: >> index.html ;		\
-	      find $$book/publish/$$lang -name html -exec echo "<li><a href=\"{}/$$book/index.html\">$$book HTML</a></li>" \; | sed s:$$book/publish/:: >> index.html ;		 		\
-	      find $$book/publish/$$lang -name html-single -exec echo "<li><a href=\"{}/$$book/index.html\">$$book HTML (single page)</a></li>" \; | sed s:$$book/publish/:: >> index.html ;	\
-	      echo "</ul></li>" >> index.html; 				\
-	    done;							\
-	done
 endif
-	echo "</ol>" >> index.html	
-	echo "<p>You can find <a href=\"http://www.clusterlabs.org/wiki/Documentation\">additional documentation</a> and details about the Pacemaker project at <a href=\"http://www.clusterlabs.org\">http://www.clusterlabs.org</a></p>" >> index.html	
-	echo "</body></html>" >> index.html	
 
+EXTRA_DIST	= $(docbook:%=%.xml)
 
 %.html: %.txt
-	$(ASCIIDOC) --unsafe --backend=xhtml11 $<
+	$(AM_V_ASCII)$(ASCIIDOC) --unsafe --backend=xhtml11 $<
 
-%.txt: %/en-US/*.xml
-	cd $* && $(PUBLICAN) build --publish --langs=all --formats=pdf,html,html-single,txt
+# publican-clusterlabs/xsl/html-single.xsl imports that of Publican
+# through this link during the build
+../xsl:
+	ln -s /usr/share/publican/xsl "$@"
+
+SHARED_TXT=$(wildcard shared/en-US/*.txt)
+SHARED_XML=$(SHARED_TXT:%.txt=%.xml)
+
+
+CFS_SHARED_TXT=$(addprefix shared/en-US/,pacemaker-intro.txt)
+CFS_SHARED_XML=$(CFS_SHARED_TXT:%.txt=%.xml)
+CFS_TXT=$(wildcard Clusters_from_Scratch/en-US/*.txt)
+CFS_XML=$(CFS_TXT:%.txt=%.xml)
+
+$(CFS_XML): $(CFS_SHARED_XML)
+
+# We have to hardcode the book name
+# With '%' the test for 'newness' fails
+Clusters_from_Scratch.build: $(PNGS) $(wildcard Clusters_from_Scratch/en-US/*.xml) $(CFS_XML) $(CFS_SHARED_XML) ../xsl
+	$(PCMK_V) @echo Building $(@:%.build=%) because of $?
+	rm -rf $(@:%.build=%)/publish/*
+	$(AM_V_PUB)cd $(@:%.build=%) && RPM_BUILD_DIR="" $(PUBLICAN) build --publish --langs=$(DOCBOOK_LANGS) --formats=$(DOCBOOK_FORMATS) $(PCMK_quiet) --brand_dir=../publican-clusterlabs
+	rm -rf $(@:%.build=%)/tmp
 	touch $@
 
+
+PE_SHARED_TXT=$(addprefix shared/en-US/,pacemaker-intro.txt)
+PE_SHARED_XML=$(PE_SHARED_TXT:%.txt=%.xml)
+PE_TXT=$(wildcard Pacemaker_Explained/en-US/*.txt)
+PE_XML=$(PE_TXT:%.txt=%.xml)
+
+$(PE_XML): $(PE_SHARED_XML)
+
+# We have to hardcode the book name
+# With '%' the test for 'newness' fails
+Pacemaker_Explained.build: $(PNGS) $(wildcard Pacemaker_Explained/en-US/*.xml) $(PE_XML) $(PE_SHARED_XML) ../xsl
+	$(PCMK_V) @echo Building $(@:%.build=%) because of $?
+	rm -rf $(@:%.build=%)/publish/*
+	$(AM_V_PUB)cd $(@:%.build=%) && RPM_BUILD_DIR="" $(PUBLICAN) build --publish --langs=$(DOCBOOK_LANGS) --formats=$(DOCBOOK_FORMATS) $(PCMK_quiet) --brand_dir=../publican-clusterlabs
+	rm -rf $(@:%.build=%)/tmp
+	touch $@
+
+
+PR_TXT=$(wildcard Pacemaker_Remote/en-US/*.txt)
+PR_XML=$(PR_TXT:%.txt=%.xml)
+
+# We have to hardcode the book name
+# With '%' the test for 'newness' fails
+Pacemaker_Remote.build: $(PNGS) $(wildcard Pacemaker_Remote/en-US/*.xml) $(PR_XML) ../xsl
+	$(PCMK_V) @echo Building $(@:%.build=%) because of $?
+	rm -rf $(@:%.build=%)/publish/*
+	$(AM_V_PUB)cd $(@:%.build=%) && RPM_BUILD_DIR="" $(PUBLICAN) build --publish --langs=$(DOCBOOK_LANGS) --formats=$(DOCBOOK_FORMATS) $(PCMK_quiet) --brand_dir=../publican-clusterlabs
+	rm -rf $(@:%.build=%)/tmp
+	touch $@
+
+# Update the translation template
+pot:
+	for book in $(docbook); do 				      \
+		echo "Updating translation templates in: $$book";     \
+		( cd $$book && RPM_BUILD_DIR="" $(PUBLICAN) update_pot ); \
+	done
+
+# Update the actual translations
+po: pot
+	for book in $(docbook); do 				      \
+		echo "Updating translations in: $$book";     \
+		( cd $$book && RPM_BUILD_DIR="" $(PUBLICAN) update_po --langs=all );\
+	done
+
 if BUILD_DOCBOOK
-docbook_txt = $(docbook:%=%.txt)
+docbook_build = $(docbook:%=%.build)
 
-all-local: $(docbook_txt)
+all-local: $(docbook_build) */publican.cfg
 
-#install-data-local: all-local
-install-data-local: all-local 
+install-data-local: all-local
 	for book in $(docbook); do 							\
-	    filelist=`find $$book/publish -print`;					\
+	    filelist=`find $$book/publish/* -print`;					\
 	    for f in $$filelist; do							\
 		p=`echo $$f | sed s:publish/:: | sed s:Pacemaker/::`;			\
 		if [ -d $$f ]; then							\
-			echo $(INSTALL) -d 775 $(DESTDIR)/$(docdir)/$$p;		\
+			$(INSTALL) -d -m 775 $(DESTDIR)$(docdir)/$$p;			\
 		else									\
-			echo $(INSTALL) -m 644 $$f $(DESTDIR)/$(docdir)/$$p;		\
+			$(INSTALL) -m 644 $$f $(DESTDIR)$(docdir)/$$p;			\
 		fi									\
 	    done;									\
 	done
 endif
 
-push:   all-local $(generated_docs)
-	echo Uploading current documentation set to clusterlabs.org
-	rsync -rtz --progress $(generated_docs) root@oss.clusterlabs.org:/var/www/html/doc/
+brand:  $(BRAND_PNGS) $(wildcard publican-clusterlabs/en-US/*.xml)
+	cd publican-clusterlabs && publican build --formats=xml --langs=all --publish
+	echo "Installing..."
+	cd publican-clusterlabs && sudo publican install_brand --path=$(datadir)/publican/Common_Content
+
+#	find publican-clusterlabs -name "*.noarch.rpm" -exec rm -f \{\} \;
+#	cd publican-clusterlabs && $(PUBLICAN) package --binary
+#	find publican-clusterlabs -name "*.noarch.rpm" -exec sudo rpm -Uvh --force \{\} \;
+
+pdf:
+	make DOCBOOK_FORMATS="pdf" ASCIIDOC_CLI_TYPE=$(ASCIIDOC_CLI_TYPE) all-local
+
+www: clean-local $(generated_docs) $(ascii)
+	make www-cli
+	rsync -rtz --progress $(generated_docs) $(ascii) $(asciiman) $(RSYNC_DEST)
+
+www-pcs: www-cli
+
+www-cli:
+	for book in $(docbook); do 										\
+		sed -i.sed 's@brand:.*@brand: clusterlabs@' $$book/publican.cfg;				\
+		sed -i.sed 's@version:.*@version: $(PACKAGE_SERIES)-$(ASCIIDOC_CLI_TYPE)@' $$book/publican.cfg;	\
+	done
+	make DOCBOOK_FORMATS="pdf,html,html-single,epub" DOCBOOK_LANGS="all" ASCIIDOC_CLI_TYPE=$(ASCIIDOC_CLI_TYPE) all-local
+	echo Uploading current $(PACKAGE_SERIES)-$(ASCIIDOC_CLI_TYPE) documentation set to clusterlabs.org
 if BUILD_DOCBOOK
-	for book in $(docbook); do 							\
-		echo Uploading $$book...;						\
-		echo "Generated on `date` from version: $(BUILD_VERSION)" > $$book/publish/build-$(PACKAGE_SERIES).txt;	\
-		rsync -rtz --progress $$book/publish/* root@oss.clusterlabs.org:/var/www/html/doc/;	\
+	for book in $(docbook); do 									\
+		echo Uploading $$book...;								\
+		echo "Generated on `date` from version: $(shell git log --pretty="format:%h %d" -n 1)" >> $$book/publish/build-$(PACKAGE_SERIES)-$(ASCIIDOC_CLI_TYPE).txt;	\
+		for lang in `ls -1 $$book/publish | grep [a-z][a-z]-[A-Z][A-Z]`; do							\
+			mv $$book/publish/$$lang/Pacemaker/$(PACKAGE_SERIES)-$(ASCIIDOC_CLI_TYPE)/epub/$$book/Pacemaker-1.1{-$(ASCIIDOC_CLI_TYPE),}-$$book-$$lang.epub;	\
+			mv $$book/publish/$$lang/Pacemaker/$(PACKAGE_SERIES)-$(ASCIIDOC_CLI_TYPE)/pdf/$$book/Pacemaker-1.1{-$(ASCIIDOC_CLI_TYPE),}-$$book-$$lang.pdf;	\
+		done;											\
+		rsync -rtz --progress $$book/publish/* $(RSYNC_DEST);					\
+		sed -i.sed 's@version:.*@version: $(PACKAGE_SERIES)@' $$book/publican.cfg;		\
 	done
 endif
 
 clean-local:
-	-rm -rf $(generated_docs) $(docbook)/tmp $(docbook)/publish $(docbook_txt)
+	-rm -rf $(generated_docs) $(generated_mans) $(docbook_build) ../xsl $(generated_PNGS)
+	-rm -rf $(SHARED_XML) $(CFS_XML) $(PE_XML) $(PR_XML)
+	for book in $(docbook); do rm -rf $$book/tmp $$book/publish; done

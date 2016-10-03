@@ -15,7 +15,7 @@
  * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
 #include <crm_internal.h>
@@ -26,25 +26,26 @@
  *	Small replacement function for setenv()
  */
 int
-setenv(const char *name, const char * value, int why)
+setenv(const char *name, const char *value, int why)
 {
-	int rc = -1;
+    int rc = -1;
 
-	if ( name && value ) {
-		char * envp = NULL;
-		envp = malloc(strlen(name)+strlen(value)+2);
-		if (envp) {
-			/*
-			 * Unfortunately, the putenv API guarantees memory leaks when
-			 * changing environment variables repeatedly...   :-(
-			 */
+    if (name && value) {
+        char *envp = NULL;
 
-			sprintf(envp, "%s=%s", name, value);
+        envp = malloc(strlen(name) + strlen(value) + 2);
+        if (envp) {
+            /*
+             * Unfortunately, the putenv API guarantees memory leaks when
+             * changing environment variables repeatedly...   :-(
+             */
 
-			/* Cannot free envp (!) */
-			rc = putenv(envp);
-		}
-	
-	}
-	return(rc);
+            sprintf(envp, "%s=%s", name, value);
+
+            /* Cannot free envp (!) */
+            rc = putenv(envp);
+        }
+
+    }
+    return (rc);
 }

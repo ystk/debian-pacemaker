@@ -1,0 +1,3 @@
+digraph "g" {
+"rsc2_clear_failcount node1" [ style=bold color="green" fontcolor="black"]
+}

@@ -1,19 +1,19 @@
-/* 
+/*
  * Copyright (C) 2004 Andrew Beekhof <andrew@beekhof.net>
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
  * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- * 
+ * version 2 of the License, or (at your option) any later version.
+ *
  * This software is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include <crm_internal.h>
@@ -30,17 +30,19 @@
 #include <fcntl.h>
 
 #include <crm/crm.h>
-#include <crm/cib.h>
+#include <crm/cib/internal.h>
 #include <crm/msg_xml.h>
-#include <crm/common/ipc.h>
-#include <crm/common/cluster.h>
+#include <crm/cluster/internal.h>
 
 #include <crm/common/xml.h>
-#include <crm/common/msg.h>
+
+#include <crm/common/mainloop.h>
 
 #include <cibio.h>
 #include <callbacks.h>
 #include <pwd.h>
+#include <grp.h>
+#include "common.h"
 
 #if HAVE_LIBXML2
 #  include <libxml/parser.h>
@@ -55,35 +57,35 @@
 #endif
 
 extern int init_remote_listener(int port, gboolean encrypted);
-extern gboolean stand_alone;
-
 gboolean cib_shutdown_flag = FALSE;
-enum cib_errors cib_status = cib_ok;
+int cib_status = pcmk_ok;
+
+crm_cluster_t crm_cluster;
 
 #if SUPPORT_HEARTBEAT
 oc_ev_t *cib_ev_token;
 ll_cluster_t *hb_conn = NULL;
-extern void oc_ev_special(const oc_ev_t *, oc_ev_class_t , int );
-gboolean cib_register_ha(ll_cluster_t *hb_cluster, const char *client_name);
+extern void oc_ev_special(const oc_ev_t *, oc_ev_class_t, int);
+gboolean cib_register_ha(ll_cluster_t * hb_cluster, const char *client_name);
+#else
+void *hb_conn = NULL;
 #endif
 
-GMainLoop*  mainloop = NULL;
-const char* cib_root = CRM_CONFIG_DIR;
+GMainLoop *mainloop = NULL;
+const char *cib_root = NULL;
 char *cib_our_uname = NULL;
 gboolean preserve_status = FALSE;
 gboolean cib_writes_enabled = TRUE;
 int remote_fd = 0;
 int remote_tls_fd = 0;
 
-void usage(const char* cmd, int exit_status);
 int cib_init(void);
 void cib_shutdown(int nsig);
-void cib_ha_connection_destroy(gpointer user_data);
 gboolean startCib(const char *filename);
 extern int write_cib_contents(gpointer p);
 
-GTRIGSource *cib_writer = NULL;
-GHashTable *client_list = NULL;
+GHashTable *config_hash = NULL;
+GHashTable *local_notify_queue = NULL;
 
 char *channel1 = NULL;
 char *channel2 = NULL;
@@ -91,548 +93,492 @@ char *channel3 = NULL;
 char *channel4 = NULL;
 char *channel5 = NULL;
 
-#define OPTARGS	"aswr:V?"
+#define OPTARGS	"maswr:V?"
 void cib_cleanup(void);
 
 static void
-cib_diskwrite_complete(gpointer userdata, int status, int signo, int exitcode)
+cib_enable_writes(int nsig)
 {
-	if(exitcode != LSB_EXIT_OK || signo != 0 || status != 0) {
-		crm_err("Disk write failed: status=%d, signo=%d, exitcode=%d",
-			status, signo, exitcode);
-
-		if(cib_writes_enabled) {
-			crm_err("Disabling disk writes after write failure");
-			cib_writes_enabled = FALSE;
-		}
-		
-	} else {
-		crm_debug_2("Disk write passed");
-	}
+    crm_info("(Re)enabling disk writes");
+    cib_writes_enabled = TRUE;
 }
 
-int
-main(int argc, char ** argv)
+static void
+log_cib_client(gpointer key, gpointer value, gpointer user_data)
 {
-	int flag;
-	int rc = 0;
-	int argerr = 0;
-#ifdef HAVE_GETOPT_H
-	int option_index = 0;
-	static struct option long_options[] = {
-		{"per-action-cib", 0, 0, 'a'},
-		{"stand-alone",    0, 0, 's'},
-		{"disk-writes",    0, 0, 'w'},
+    crm_info("Client %s", crm_client_name(value));
+}
 
-		{"cib-root",    1, 0, 'r'},
+/* *INDENT-OFF* */
+static struct crm_option long_options[] = {
+    /* Top-level Options */
+    {"help",    0, 0, '?', "\tThis text"},
+    {"verbose", 0, 0, 'V', "\tIncrease debug output"},
 
-		{"verbose",     0, 0, 'V'},
-		{"help",        0, 0, '?'},
+    {"per-action-cib", 0, 0, 'a', "\tAdvanced use only"},
+    {"stand-alone",    0, 0, 's', "\tAdvanced use only"},
+    {"disk-writes",    0, 0, 'w', "\tAdvanced use only"},
+    {"cib-root",       1, 0, 'r', "\tAdvanced use only"},
 
-		{0, 0, 0, 0}
-	};
-#endif
+    {0, 0, 0, 0}
+};
+/* *INDENT-ON* */
 
-	struct passwd *pwentry = NULL;	
-	crm_log_init(CRM_SYSTEM_CIB, LOG_INFO, TRUE, TRUE, argc, argv);
-	mainloop_add_signal(SIGTERM, cib_shutdown);
-	
-	cib_writer = G_main_add_tempproc_trigger(			
-		G_PRIORITY_LOW, write_cib_contents, "write_cib_contents",
-		NULL, NULL, NULL, cib_diskwrite_complete);
+int
+main(int argc, char **argv)
+{
+    int flag;
+    int rc = 0;
+    int index = 0;
+    int argerr = 0;
+    struct passwd *pwentry = NULL;
 
-	/* EnableProcLogging(); */
-	set_sigchld_proctrack(G_PRIORITY_HIGH,DEFAULT_MAXDISPATCHTIME);
+    crm_log_preinit(NULL, argc, argv);
+    crm_set_options(NULL, "[options]",
+                    long_options, "Daemon for storing and replicating the cluster configuration");
 
-	crm_peer_init();
-	client_list = g_hash_table_new(g_str_hash, g_str_equal);
-	
-	while (1) {
-#ifdef HAVE_GETOPT_H
-		flag = getopt_long(argc, argv, OPTARGS,
-				   long_options, &option_index);
-#else
-		flag = getopt(argc, argv, OPTARGS);
-#endif
-		if (flag == -1)
-			break;
-		
-		switch(flag) {
-			case 'V':
-				alter_debug(DEBUG_INC);
-				break;
-			case 's':
-				stand_alone = TRUE;
-				preserve_status = TRUE;
-				cib_writes_enabled = FALSE;
+    crm_peer_init();
 
-				pwentry = getpwnam(CRM_DAEMON_USER);
-				CRM_CHECK(pwentry != NULL,
-					  crm_perror(LOG_ERR,"Invalid uid (%s) specified", CRM_DAEMON_USER);
-					  return 100);
-				
-				rc = setgid(pwentry->pw_gid);
-				if(rc < 0) {
-				    crm_perror(LOG_ERR,"Could not set group to %d", pwentry->pw_gid);
-				    return 100;
-				}
+    mainloop_add_signal(SIGTERM, cib_shutdown);
+    mainloop_add_signal(SIGPIPE, cib_enable_writes);
 
-				rc = setuid(pwentry->pw_uid);
-				if(rc < 0) {
-				    crm_perror(LOG_ERR,"Could not set user to %d", pwentry->pw_uid);
-				    return 100;
-				}
-				cl_log_enable_stderr(1);
-				break;
-			case '?':		/* Help message */
-				usage(crm_system_name, LSB_EXIT_OK);
-				break;
-			case 'w':
-				cib_writes_enabled = TRUE;
-				break;
-			case 'r':
-				cib_root = optarg;
-				break;
-			default:
-				++argerr;
-				break;
-		}
-	}
+    cib_writer = mainloop_add_trigger(G_PRIORITY_LOW, write_cib_contents, NULL);
 
-	if (optind > argc) {
-		++argerr;
-	}
-    
-	if (argerr) {
-		usage(crm_system_name,LSB_EXIT_GENERIC);
-	}
+    while (1) {
+        flag = crm_get_option(argc, argv, &index);
+        if (flag == -1)
+            break;
 
-	if(crm_is_writable(cib_root, NULL, CRM_DAEMON_USER, CRM_DAEMON_GROUP, FALSE) == FALSE) {
-	    crm_err("Bad permissions on %s. Terminating", cib_root);
-	    fprintf(stderr,"ERROR: Bad permissions on %s. See logs for details\n", cib_root);
-	    fflush(stderr);
-	    return 100;
-	}
-    
-	/* read local config file */
-	rc = cib_init();
+        switch (flag) {
+            case 'V':
+                crm_bump_log_level(argc, argv);
+                break;
+            case 's':
+                stand_alone = TRUE;
+                preserve_status = TRUE;
+                cib_writes_enabled = FALSE;
 
-	CRM_CHECK(g_hash_table_size(client_list) == 0,
-		  crm_warn("Not all clients gone at exit"));
-	cib_cleanup();
+                pwentry = getpwnam(CRM_DAEMON_USER);
+                CRM_CHECK(pwentry != NULL,
+                          crm_perror(LOG_ERR, "Invalid uid (%s) specified", CRM_DAEMON_USER);
+                          return 100);
+
+                rc = setgid(pwentry->pw_gid);
+                if (rc < 0) {
+                    crm_perror(LOG_ERR, "Could not set group to %d", pwentry->pw_gid);
+                    return 100;
+                }
+
+                rc = initgroups(CRM_DAEMON_GROUP, pwentry->pw_gid);
+                if (rc < 0) {
+                    crm_perror(LOG_ERR, "Could not setup groups for user %d", pwentry->pw_uid);
+                    return 100;
+                }
+
+                rc = setuid(pwentry->pw_uid);
+                if (rc < 0) {
+                    crm_perror(LOG_ERR, "Could not set user to %d", pwentry->pw_uid);
+                    return 100;
+                }
+                break;
+            case '?':          /* Help message */
+                crm_help(flag, EX_OK);
+                break;
+            case 'w':
+                cib_writes_enabled = TRUE;
+                break;
+            case 'r':
+                cib_root = optarg;
+                break;
+            case 'm':
+                cib_metadata();
+                return 0;
+            default:
+                ++argerr;
+                break;
+        }
+    }
+    if (argc - optind == 1 && safe_str_eq("metadata", argv[optind])) {
+        cib_metadata();
+        return 0;
+    }
+
+    if (optind > argc) {
+        ++argerr;
+    }
+
+    if (argerr) {
+        crm_help('?', EX_USAGE);
+    }
+
+    crm_log_init(NULL, LOG_INFO, TRUE, FALSE, argc, argv, FALSE);
+    if (cib_root == NULL) {
+        char *path = crm_strdup_printf("%s/cib.xml", CRM_CONFIG_DIR);
+        char *legacy = crm_strdup_printf("%s/cib.xml", CRM_LEGACY_CONFIG_DIR);
+
+        if (g_file_test(path, G_FILE_TEST_EXISTS)) {
+            cib_root = CRM_CONFIG_DIR;
+
+        } else if (g_file_test(legacy, G_FILE_TEST_EXISTS)) {
+            cib_root = CRM_LEGACY_CONFIG_DIR;
+            crm_notice("Using legacy config location: %s", cib_root);
+
+        } else {
+            cib_root = CRM_CONFIG_DIR;
+            crm_notice("Using new config location: %s", cib_root);
+        }
+
+        free(legacy);
+        free(path);
+
+    } else {
+        crm_notice("Using custom config location: %s", cib_root);
+    }
+
+    if (crm_is_writable(cib_root, NULL, CRM_DAEMON_USER, CRM_DAEMON_GROUP, FALSE) == FALSE) {
+        crm_err("Bad permissions on %s. Terminating", cib_root);
+        fprintf(stderr, "ERROR: Bad permissions on %s. See logs for details\n", cib_root);
+        fflush(stderr);
+        return 100;
+    }
+
+    /* read local config file */
+    rc = cib_init();
+
+    CRM_CHECK(crm_hash_table_size(client_connections) == 0,
+              crm_warn("Not all clients gone at exit"));
+    g_hash_table_foreach(client_connections, log_cib_client, NULL);
+    cib_cleanup();
 
 #if SUPPORT_HEARTBEAT
-	if(hb_conn) {
-		hb_conn->llc_ops->delete(hb_conn);
-	}
+    if (hb_conn) {
+        hb_conn->llc_ops->delete(hb_conn);
+    }
 #endif
-	
-	crm_info("Done");
-	return rc;
+
+    crm_info("Done");
+    return rc;
 }
 
 void
-cib_cleanup(void) 
+cib_cleanup(void)
 {
-	crm_peer_destroy();	
-	g_hash_table_destroy(client_list);
-	crm_free(cib_our_uname);
-#if HAVE_LIBXML2
-	xmlCleanupParser();
-#endif
-	crm_free(channel1);
-	crm_free(channel2);
-	crm_free(channel3);
-	crm_free(channel4);
-	crm_free(channel5);
+    crm_peer_destroy();
+    if (local_notify_queue) {
+        g_hash_table_destroy(local_notify_queue);
+    }
+    crm_client_cleanup();
+    g_hash_table_destroy(config_hash);
+    free(cib_our_uname);
+    free(channel1);
+    free(channel2);
+    free(channel3);
+    free(channel4);
+    free(channel5);
 }
 
 unsigned long cib_num_ops = 0;
 const char *cib_stat_interval = "10min";
 unsigned long cib_num_local = 0, cib_num_updates = 0, cib_num_fail = 0;
 unsigned long cib_bad_connects = 0, cib_num_timeouts = 0;
-longclock_t cib_call_time = 0;
-
-gboolean cib_stats(gpointer data);
-
-gboolean
-cib_stats(gpointer data)
-{
-	int local_log_level = LOG_DEBUG;
-	static unsigned long last_stat = 0;
-	unsigned int cib_calls_ms = 0;
-	static unsigned long cib_stat_interval_ms = 0;
-
-	if(cib_stat_interval_ms == 0) {
-		cib_stat_interval_ms = crm_get_msec(cib_stat_interval);
-	}
-	
-	cib_calls_ms = longclockto_ms(cib_call_time);
-
-	if((cib_num_ops - last_stat) > 0) {
-		unsigned long calls_diff = cib_num_ops - last_stat;
-		double stat_1 = (1000*cib_calls_ms)/calls_diff;
-		
-		local_log_level = LOG_INFO;
-		do_crm_log(local_log_level,
-			      "Processed %lu operations"
-			      " (%.2fus average, %lu%% utilization) in the last %s",
-			      calls_diff, stat_1, 
-			      (100*cib_calls_ms)/cib_stat_interval_ms,
-			      cib_stat_interval);
-	}
-	
-	do_crm_log_unlikely(local_log_level+1,
-		      "\tDetail: %lu operations (%ums total)"
-		      " (%lu local, %lu updates, %lu failures,"
-		      " %lu timeouts, %lu bad connects)",
-		      cib_num_ops, cib_calls_ms, cib_num_local, cib_num_updates,
-		      cib_num_fail, cib_bad_connects, cib_num_timeouts);
-
-	last_stat = cib_num_ops;
-	cib_call_time = 0;
-	return TRUE;
-}
 
 #if SUPPORT_HEARTBEAT
 gboolean ccm_connect(void);
 
-static void ccm_connection_destroy(gpointer user_data)
+static void
+ccm_connection_destroy(gpointer user_data)
 {
     crm_err("CCM connection failed... blocking while we reconnect");
     CRM_ASSERT(ccm_connect());
     return;
 }
 
-gboolean ccm_connect(void) 
+static void *ccm_library = NULL;
+
+gboolean
+ccm_connect(void)
 {
     gboolean did_fail = TRUE;
     int num_ccm_fails = 0;
     int max_ccm_fails = 30;
     int ret;
     int cib_ev_fd;
-    
-    while(did_fail) {
-	did_fail = FALSE;
-	crm_info("Registering with CCM...");
-	ret = oc_ev_register(&cib_ev_token);
-	if (ret != 0) {
-	    did_fail = TRUE;
-	}
-	
-	if(did_fail == FALSE) {
-	    crm_debug_3("Setting up CCM callbacks");
-	    ret = oc_ev_set_callback(
-		cib_ev_token, OC_EV_MEMB_CLASS,
-		cib_ccm_msg_callback, NULL);
-	    if (ret != 0) {
-		crm_warn("CCM callback not set");
-		did_fail = TRUE;
-	    }
-	}
-	if(did_fail == FALSE) {
-	    oc_ev_special(cib_ev_token, OC_EV_MEMB_CLASS, 0);
-	    
-	    crm_debug_3("Activating CCM token");
-	    ret = oc_ev_activate(cib_ev_token, &cib_ev_fd);
-	    if (ret != 0){
-		crm_warn("CCM Activation failed");
-		did_fail = TRUE;
-	    }
-	}
-	
-	if(did_fail) {
-	    num_ccm_fails++;
-	    oc_ev_unregister(cib_ev_token);
-	    
-	    if(num_ccm_fails < max_ccm_fails){
-		crm_warn("CCM Connection failed %d times (%d max)",
-			 num_ccm_fails, max_ccm_fails);
-		sleep(3);
-		
-	    } else {
-		crm_err("CCM Activation failed %d (max) times",
-			num_ccm_fails);
-		return FALSE;
-	    }
-	}
+
+    int (*ccm_api_register) (oc_ev_t ** token) =
+        find_library_function(&ccm_library, CCM_LIBRARY, "oc_ev_register", 1);
+
+    int (*ccm_api_set_callback) (const oc_ev_t * token,
+                                 oc_ev_class_t class,
+                                 oc_ev_callback_t * fn,
+                                 oc_ev_callback_t ** prev_fn) =
+        find_library_function(&ccm_library, CCM_LIBRARY, "oc_ev_set_callback", 1);
+
+    void (*ccm_api_special) (const oc_ev_t *, oc_ev_class_t, int) =
+        find_library_function(&ccm_library, CCM_LIBRARY, "oc_ev_special", 1);
+    int (*ccm_api_activate) (const oc_ev_t * token, int *fd) =
+        find_library_function(&ccm_library, CCM_LIBRARY, "oc_ev_activate", 1);
+    int (*ccm_api_unregister) (oc_ev_t * token) =
+        find_library_function(&ccm_library, CCM_LIBRARY, "oc_ev_unregister", 1);
+
+    static struct mainloop_fd_callbacks ccm_fd_callbacks = {
+        .dispatch = cib_ccm_dispatch,
+        .destroy = ccm_connection_destroy,
+    };
+
+    while (did_fail) {
+        did_fail = FALSE;
+        crm_info("Registering with CCM...");
+        ret = (*ccm_api_register) (&cib_ev_token);
+        if (ret != 0) {
+            did_fail = TRUE;
+        }
+
+        if (did_fail == FALSE) {
+            crm_trace("Setting up CCM callbacks");
+            ret = (*ccm_api_set_callback) (cib_ev_token, OC_EV_MEMB_CLASS,
+                                           cib_ccm_msg_callback, NULL);
+            if (ret != 0) {
+                crm_warn("CCM callback not set");
+                did_fail = TRUE;
+            }
+        }
+        if (did_fail == FALSE) {
+            (*ccm_api_special) (cib_ev_token, OC_EV_MEMB_CLASS, 0);
+
+            crm_trace("Activating CCM token");
+            ret = (*ccm_api_activate) (cib_ev_token, &cib_ev_fd);
+            if (ret != 0) {
+                crm_warn("CCM Activation failed");
+                did_fail = TRUE;
+            }
+        }
+
+        if (did_fail) {
+            num_ccm_fails++;
+            (*ccm_api_unregister) (cib_ev_token);
+
+            if (num_ccm_fails < max_ccm_fails) {
+                crm_warn("CCM Connection failed %d times (%d max)", num_ccm_fails, max_ccm_fails);
+                sleep(3);
+
+            } else {
+                crm_err("CCM Activation failed %d (max) times", num_ccm_fails);
+                return FALSE;
+            }
+        }
     }
-    
+
     crm_debug("CCM Activation passed... all set to go!");
-    G_main_add_fd(G_PRIORITY_HIGH, cib_ev_fd, FALSE,
-		  cib_ccm_dispatch, cib_ev_token,
-		  ccm_connection_destroy);
-    
-    return TRUE;    
+    mainloop_add_fd("heartbeat-ccm", G_PRIORITY_MEDIUM, cib_ev_fd, cib_ev_token, &ccm_fd_callbacks);
+
+    return TRUE;
 }
 #endif
 
-#if SUPPORT_AIS	
-static gboolean cib_ais_dispatch(AIS_Message *wrapper, char *data, int sender) 
+#if SUPPORT_COROSYNC
+static void
+cib_cs_dispatch(cpg_handle_t handle,
+                 const struct cpg_name *groupName,
+                 uint32_t nodeid, uint32_t pid, void *msg, size_t msg_len)
 {
+    uint32_t kind = 0;
     xmlNode *xml = NULL;
+    const char *from = NULL;
+    char *data = pcmk_message_common_cs(handle, nodeid, pid, msg, &kind, &from);
 
-    if(wrapper->header.id == crm_class_cluster) {
-	    xml = string2xml(data);
-	    if(xml == NULL) {
-		goto bail;
-	    }
-	    crm_xml_add(xml, F_ORIG, wrapper->sender.uname);
-	    crm_xml_add_int(xml, F_SEQ, wrapper->id);
-	    cib_peer_callback(xml, NULL);
+    if(data == NULL) {
+        return;
+    }
+    if (kind == crm_class_cluster) {
+        xml = string2xml(data);
+        if (xml == NULL) {
+            crm_err("Invalid XML: '%.120s'", data);
+            free(data);
+            return;
+        }
+        crm_xml_add(xml, F_ORIG, from);
+        /* crm_xml_add_int(xml, F_SEQ, wrapper->id); */
+        cib_peer_callback(xml, NULL);
     }
 
     free_xml(xml);
-    return TRUE;
-
-  bail:
-    crm_err("Invalid XML: '%.120s'", data);
-    return TRUE;
-
+    free(data);
 }
 
 static void
-cib_ais_destroy(gpointer user_data)
+cib_cs_destroy(gpointer user_data)
 {
-    crm_err("AIS connection terminated");
-    ais_fd_sync = -1;
-    exit(1);
+    if (cib_shutdown_flag) {
+        crm_info("Corosync disconnection complete");
+    } else {
+        crm_err("Corosync connection lost!  Exiting.");
+        terminate_cib(__FUNCTION__, -1);
+    }
+}
+#endif
+
+static void
+cib_peer_update_callback(enum crm_status_type type, crm_node_t * node, const void *data)
+{
+    switch (type) {
+        case crm_status_processes:
+            if (legacy_mode && is_not_set(node->processes, crm_get_cluster_proc())) {
+                uint32_t old = data? *(const uint32_t *)data : 0;
+
+                if ((node->processes ^ old) & crm_proc_cpg) {
+                    crm_info("Attempting to disable legacy mode after %s left the cluster",
+                             node->uname);
+                    legacy_mode = FALSE;
+                }
+            }
+            break;
+
+        case crm_status_uname:
+        case crm_status_rstate:
+        case crm_status_nstate:
+            if (cib_shutdown_flag && (crm_active_peers() < 2)
+                && crm_hash_table_size(client_connections) == 0) {
+
+                crm_info("No more peers");
+                terminate_cib(__FUNCTION__, 1);
+            }
+            break;
+    }
+}
+
+#if SUPPORT_HEARTBEAT
+static void
+cib_ha_connection_destroy(gpointer user_data)
+{
+    if (cib_shutdown_flag) {
+        crm_info("Heartbeat disconnection complete... exiting");
+        terminate_cib(__FUNCTION__, 0);
+    } else {
+        crm_err("Heartbeat connection lost!  Exiting.");
+        terminate_cib(__FUNCTION__, -1);
+    }
 }
 #endif
 
 int
 cib_init(void)
 {
-	gboolean was_error = FALSE;
-	
-	if(startCib("cib.xml") == FALSE){
-		crm_crit("Cannot start CIB... terminating");
-		exit(1);
-	}
-
-	if(stand_alone == FALSE) {
-	    void *dispatch = cib_ha_peer_callback;
-	    void *destroy = cib_ha_connection_destroy;
-	    
-	    if(is_openais_cluster()) {
-#if SUPPORT_AIS
-		destroy = cib_ais_destroy;
-		dispatch = cib_ais_dispatch;
+    if (is_openais_cluster()) {
+#if SUPPORT_COROSYNC
+        crm_cluster.destroy = cib_cs_destroy;
+        crm_cluster.cpg.cpg_deliver_fn = cib_cs_dispatch;
+        crm_cluster.cpg.cpg_confchg_fn = pcmk_cpg_membership;
 #endif
-	    }
-	    
-	    if(crm_cluster_connect(&cib_our_uname, NULL, dispatch, destroy,
+    } else if (is_heartbeat_cluster()) {
 #if SUPPORT_HEARTBEAT
-				   &hb_conn
-#else
-				   NULL
+        crm_cluster.hb_dispatch = cib_ha_peer_callback;
+        crm_cluster.destroy = cib_ha_connection_destroy;
 #endif
-		   ) == FALSE){
-		crm_crit("Cannot sign in to the cluster... terminating");
-		exit(100);
-	    }
-#if 0
-	    if(is_openais_cluster()) {
-		crm_info("Requesting the list of configured nodes");
-		send_ais_text(
-		    crm_class_members, __FUNCTION__, TRUE, NULL, crm_msg_ais);
-	    }
-#endif
+    }
+
+    config_hash =
+        g_hash_table_new_full(crm_str_hash, g_str_equal, g_hash_destroy_str, g_hash_destroy_str);
+
+    if (startCib("cib.xml") == FALSE) {
+        crm_crit("Cannot start CIB... terminating");
+        crm_exit(ENODATA);
+    }
+
+    if (stand_alone == FALSE) {
+        if (crm_cluster_connect(&crm_cluster) == FALSE) {
+            crm_crit("Cannot sign in to the cluster... terminating");
+            crm_exit(DAEMON_RESPAWN_STOP);
+        }
+        cib_our_uname = crm_cluster.uname;
+        if (is_openais_cluster()) {
+            crm_set_status_callback(&cib_peer_update_callback);
+        }
 #if SUPPORT_HEARTBEAT
-	    if(is_heartbeat_cluster()) {
+        if (is_heartbeat_cluster()) {
 
-		if(was_error == FALSE) {
-		    if (HA_OK != hb_conn->llc_ops->set_cstatus_callback(
-			    hb_conn, cib_client_status_callback, hb_conn)) {
-			
-			crm_err("Cannot set cstatus callback: %s",
-				hb_conn->llc_ops->errmsg(hb_conn));
-			was_error = TRUE;
-		    }
-		}
-		
-		if(was_error == FALSE) {
-		    was_error = (ccm_connect() == FALSE);
-		}
-		
-		if(was_error == FALSE) {
-		    /* Async get client status information in the cluster */
-		    crm_info("Requesting the list of configured nodes");
-		    hb_conn->llc_ops->client_status(
-			hb_conn, NULL, CRM_SYSTEM_CIB, -1);
-		}
-	    }
+            gboolean was_error = FALSE;
+
+            hb_conn = crm_cluster.hb_conn;
+            if (was_error == FALSE) {
+                if (HA_OK !=
+                    hb_conn->llc_ops->set_cstatus_callback(hb_conn, cib_client_status_callback,
+                                                           hb_conn)) {
+
+                    crm_err("Cannot set cstatus callback: %s", hb_conn->llc_ops->errmsg(hb_conn));
+                    was_error = TRUE;
+                }
+            }
+
+            if (was_error == FALSE) {
+                was_error = (ccm_connect() == FALSE);
+            }
+
+            if (was_error == FALSE) {
+                /* Async get client status information in the cluster */
+                crm_info("Requesting the list of configured nodes");
+                hb_conn->llc_ops->client_status(hb_conn, NULL, CRM_SYSTEM_CIB, -1);
+            }
+        }
 #endif
-	
-	} else {
-		cib_our_uname = crm_strdup("localhost");
-	}
 
-	channel1 = crm_strdup(cib_channel_callback);
-	was_error = init_server_ipc_comms(
-		channel1, cib_client_connect,
-		default_ipc_connection_destroy);
+    } else {
+        cib_our_uname = strdup("localhost");
+    }
 
-	channel2 = crm_strdup(cib_channel_ro);
-	was_error = was_error || init_server_ipc_comms(
-		channel2, cib_client_connect,
-		default_ipc_connection_destroy);
+    cib_ipc_servers_init(&ipcs_ro,
+                         &ipcs_rw,
+                         &ipcs_shm,
+                         &ipc_ro_callbacks,
+                         &ipc_rw_callbacks);
 
-	channel3 = crm_strdup(cib_channel_rw);
-	was_error = was_error || init_server_ipc_comms(
-		channel3, cib_client_connect,
-		default_ipc_connection_destroy);
+    if (stand_alone) {
+        cib_is_master = TRUE;
+    }
 
-	if(stand_alone) {
-		if(was_error) {
-			crm_err("Couldnt start");
-			return 1;
-		}
-		cib_is_master = TRUE;
-		
-		/* Create the mainloop and run it... */
-		mainloop = g_main_new(FALSE);
-		crm_info("Starting %s mainloop", crm_system_name);
+    /* Create the mainloop and run it... */
+    mainloop = g_main_new(FALSE);
+    crm_info("Starting %s mainloop", crm_system_name);
+    g_main_run(mainloop);
 
-		g_main_run(mainloop);
-		return 0;
-	}
+    /* If main loop returned, clean up and exit. We disconnect in case
+     * terminate_cib() was called with fast=1.
+     */
+    crm_cluster_disconnect(&crm_cluster);
+    cib_ipc_servers_destroy(ipcs_ro, ipcs_rw, ipcs_shm);
 
-	if(was_error == FALSE) {
-		/* Create the mainloop and run it... */
-		mainloop = g_main_new(FALSE);
-		crm_info("Starting %s mainloop", crm_system_name);
-
-		g_timeout_add(
-			crm_get_msec(cib_stat_interval), cib_stats, NULL); 
-		
-		g_main_run(mainloop);
-
-	} else {
-		crm_err("Couldnt start all communication channels, exiting.");
-	}
-	
-	return 0;
-}
-
-void
-usage(const char* cmd, int exit_status)
-{
-	FILE* stream;
-
-	stream = exit_status ? stderr : stdout;
-
-	fprintf(stream, "usage: %s [-%s]\n", cmd, OPTARGS);
-	fprintf(stream, "\t--%s (-%c)\t\tTurn on debug info."
-		"  Additional instances increase verbosity\n", "verbose", 'V');
-	fprintf(stream, "\t--%s (-%c)\t\tThis help message\n", "help", '?');
-	fprintf(stream, "\t--%s (-%c)\tAdvanced use only\n", "per-action-cib", 'a');
-	fprintf(stream, "\t--%s (-%c)\tAdvanced use only\n", "stand-alone", 's');
-	fprintf(stream, "\t--%s (-%c)\tAdvanced use only\n", "disk-writes", 'w');
-	fprintf(stream, "\t--%s (-%c)\t\tAdvanced use only\n", "cib-root", 'r');
-	fflush(stream);
-
-	exit(exit_status);
-}
-
-void
-cib_ha_connection_destroy(gpointer user_data)
-{
-	if(cib_shutdown_flag) {
-		crm_info("Heartbeat disconnection complete... exiting");
-	} else {
-		crm_err("Heartbeat connection lost!  Exiting.");
-	}
-		
-	uninitializeCib();
-
-	crm_info("Exiting...");
-	if (mainloop != NULL && g_main_is_running(mainloop)) {
-		g_main_quit(mainloop);
-		
-	} else {
-		exit(LSB_EXIT_OK);
-	}
-}
-
-
-static void
-disconnect_cib_client(gpointer key, gpointer value, gpointer user_data) 
-{
-	cib_client_t *a_client = value;
-	crm_debug_2("Processing client %s/%s... send=%d, recv=%d",
-		  crm_str(a_client->name), crm_str(a_client->channel_name),
-		  (int)a_client->channel->send_queue->current_qlen,
-		  (int)a_client->channel->recv_queue->current_qlen);
-
-	if(a_client->channel->ch_status == IPC_CONNECT) {
-		a_client->channel->ops->resume_io(a_client->channel);
-		if(a_client->channel->send_queue->current_qlen != 0
-		   || a_client->channel->recv_queue->current_qlen != 0) {
-			crm_info("Flushed messages to/from %s/%s... send=%d, recv=%d",
-				crm_str(a_client->name),
-				crm_str(a_client->channel_name),
-				(int)a_client->channel->send_queue->current_qlen,
-				(int)a_client->channel->recv_queue->current_qlen);
-		}
-	}
-
-	if(a_client->channel->ch_status == IPC_CONNECT) {
-		crm_warn("Disconnecting %s/%s...",
-			 crm_str(a_client->name),
-			 crm_str(a_client->channel_name));
-		a_client->channel->ops->disconnect(a_client->channel);
-	}
-}
-
-extern gboolean cib_process_disconnect(
-	IPC_Channel *channel, cib_client_t *cib_client);
-
-void
-cib_shutdown(int nsig)
-{
-	if(cib_shutdown_flag == FALSE) {
-		cib_shutdown_flag = TRUE;
-		crm_debug("Disconnecting %d clients",
-			 g_hash_table_size(client_list));
-		g_hash_table_foreach(client_list, disconnect_cib_client, NULL);
-		crm_info("Disconnected %d clients",
-			 g_hash_table_size(client_list));
-		cib_process_disconnect(NULL, NULL);
-
-	} else {
-		crm_info("Waiting for %d clients to disconnect...",
-			 g_hash_table_size(client_list));
-	}
+    return crm_exit(pcmk_ok);
 }
 
 gboolean
 startCib(const char *filename)
 {
-	gboolean active = FALSE;
-	xmlNode *cib = readCibXmlFile(cib_root, filename, !preserve_status);
+    gboolean active = FALSE;
+    xmlNode *cib = readCibXmlFile(cib_root, filename, !preserve_status);
 
-	CRM_ASSERT(cib != NULL);
-	
-	if(activateCibXml(cib, TRUE, "start") == 0) {
-		int port = 0;
-		const char *port_s = NULL;
-		active = TRUE;
+    CRM_ASSERT(cib != NULL);
 
-		port_s = crm_element_value(cib, "remote-tls-port");
-		if(port_s) {
-		    port = crm_parse_int(port_s, "0");
-		    remote_tls_fd = init_remote_listener(port, TRUE);
-		}
+    if (activateCibXml(cib, TRUE, "start") == 0) {
+        int port = 0;
+        const char *port_s = NULL;
 
-		port_s = crm_element_value(cib, "remote-clear-port");
-		if(port_s) {
-		    port = crm_parse_int(port_s, "0");
-		    remote_fd = init_remote_listener(port, FALSE);
-		}
+        active = TRUE;
 
-		crm_info("CIB Initialization completed successfully");
-	}
-	
-	return active;
+        cib_read_config(config_hash, cib);
+
+        port_s = crm_element_value(cib, "remote-tls-port");
+        if (port_s) {
+            port = crm_parse_int(port_s, "0");
+            remote_tls_fd = init_remote_listener(port, TRUE);
+        }
+
+        port_s = crm_element_value(cib, "remote-clear-port");
+        if (port_s) {
+            port = crm_parse_int(port_s, "0");
+            remote_fd = init_remote_listener(port, FALSE);
+        }
+
+        crm_info("CIB Initialization completed successfully");
+    }
+
+    return active;
 }

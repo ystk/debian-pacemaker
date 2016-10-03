@@ -1,0 +1,715 @@
+= Advanced Configuration =
+
+[[s-remote-connection]]
+== Connecting from a Remote Machine ==
+indexterm:[Cluster,Remote connection]
+indexterm:[Cluster,Remote administration]
+
+Provided Pacemaker is installed on a machine, it is possible to
+connect to the cluster even if the machine itself is not in the same
+cluster.  To do this, one simply sets up a number of environment
+variables and runs the same commands as when working on a cluster
+node.
+
+.Environment Variables Used to Connect to Remote Instances of the CIB
+[width="95%",cols="1m,1,3<",options="header",align="center"]
+|=========================================================
+
+|Environment Variable
+|Default
+|Description
+
+|CIB_user
+|$USER
+|The user to connect as. Needs to be part of the +hacluster+ group on
+ the target host.
+ indexterm:[Environment Variable,CIB_user]
+
+|CIB_passwd
+|
+|The user's password. Read from the command line if unset.
+ indexterm:[Environment Variable,CIB_passwd]
+
+|CIB_server
+|localhost
+|The host to contact
+ indexterm:[Environment Variable,CIB_server]
+
+|CIB_port
+|
+|The port on which to contact the server; required.
+ indexterm:[Environment Variable,CIB_port]
+
+|CIB_encrypted
+|TRUE
+|Whether to encrypt network traffic
+ indexterm:[Environment Variable,CIB_encrypted]
+
+|=========================================================
+
+So, if *c001n01* is an active cluster node and is listening on port 1234
+for connections, and *someuser* is a member of the *hacluster* group,
+then the following would prompt for *someuser*'s password and return
+the cluster's current configuration:
+
+----
+# export CIB_port=1234; export CIB_server=c001n01; export CIB_user=someuser;
+# cibadmin -Q
+----
+
+For security reasons, the cluster does not listen for remote
+connections by default.  If you wish to allow remote access, you need
+to set the +remote-tls-port+ (encrypted) or +remote-clear-port+
+(unencrypted) CIB properties (i.e., those kept in the +cib+ tag, like
++num_updates+ and +epoch+).
+
+.Extra top-level CIB properties for remote access
+[width="95%",cols="1m,1,3<",options="header",align="center"]
+|=========================================================
+
+|Field
+|Default
+|Description
+
+|remote-tls-port
+|_none_
+|Listen for encrypted remote connections on this port.
+ indexterm:[remote-tls-port,Remote Connection Option]
+ indexterm:[Remote Connection,Option,remote-tls-port]
+
+|remote-clear-port
+|_none_
+|Listen for plaintext remote connections on this port.
+ indexterm:[remote-clear-port,Remote Connection Option]
+ indexterm:[Remote Connection,Option,remote-clear-port]
+
+|=========================================================
+
+[[s-recurring-start]]
+== Specifying When Recurring Actions are Performed ==
+
+
+By default, recurring actions are scheduled relative to when the
+resource started.  So if your resource was last started at 14:32 and
+you have a backup set to be performed every 24 hours, then the backup
+will always run at in the middle of the business day -- hardly
+desirable.
+
+To specify a date and time that the operation should be relative to, set
+the operation's +interval-origin+.  The cluster uses this point to
+calculate the correct +start-delay+ such that the operation will occur
+at _origin + (interval * N)_.
+
+So, if the operation's interval is 24h, its interval-origin is set to
+02:00 and it is currently 14:32, then the cluster would initiate
+the operation with a start delay of 11 hours and 28 minutes.  If the
+resource is moved to another node before 2am, then the operation is
+cancelled.
+
+The value specified for +interval+ and +interval-origin+ can be any
+date/time conforming to the
+http://en.wikipedia.org/wiki/ISO_8601[ISO8601 standard].  By way of
+example, to specify an operation that would run on the first Monday of
+2009 and every Monday after that, you would add:
+
+.Specifying a Base for Recurring Action Intervals
+=====
+[source,XML]
+<op id="my-weekly-action" name="custom-action" interval="P7D" interval-origin="2009-W01-1"/> 
+=====
+
+== Moving Resources ==
+indexterm:[Moving,Resources] 
+indexterm:[Resource,Moving]
+
+=== Moving Resources Manually ===
+
+There are primarily two occasions when you would want to move a
+resource from its current location: when the whole node is under
+maintenance, and when a single resource needs to be moved.
+
+==== Standby Mode ====
+
+Since everything eventually comes down to a score, you could create
+constraints for every resource to prevent them from running on one
+node.  While pacemaker configuration can seem convoluted at times, not even
+we would require this of administrators.
+
+Instead, one can set a special node attribute which tells the cluster
+"don't let anything run here".  There is even a helpful tool to help
+query and set it, called `crm_standby`.  To check the standby status
+of the current machine, run:
+
+----
+# crm_standby -G
+----
+
+A value of +on+ indicates that the node is _not_ able to host any
+resources, while a value of +off+ says that it _can_.
+
+You can also check the status of other nodes in the cluster by
+specifying the `--node` option:
+
+----
+# crm_standby -G --node sles-2
+----
+
+To change the current node's standby status, use `-v` instead of `-G`:
+
+----
+# crm_standby -v on
+----
+
+Again, you can change another host's value by supplying a hostname with `--node`.
+
+==== Moving One Resource ====
+
+When only one resource is required to move, we could do this by creating
+location constraints.  However, once again we provide a user-friendly
+shortcut as part of the `crm_resource` command, which creates and
+modifies the extra constraints for you.  If +Email+ were running on
++sles-1+ and you wanted it moved to a specific location, the command
+would look something like:
+        
+----
+# crm_resource -M -r Email -H sles-2
+----
+
+Behind the scenes, the tool will create the following location constraint:
+
+[source,XML]
+<rsc_location rsc="Email" node="sles-2" score="INFINITY"/>
+
+It is important to note that subsequent invocations of `crm_resource
+-M` are not cumulative. So, if you ran these commands
+
+----
+# crm_resource -M -r Email -H sles-2
+# crm_resource -M -r Email -H sles-3
+----
+
+then it is as if you had never performed the first command.
+
+To allow the resource to move back again, use:
+
+----
+# crm_resource -U -r Email
+----
+
+Note the use of the word _allow_.  The resource can move back to its
+original location but, depending on +resource-stickiness+, it might
+stay where it is.  To be absolutely certain that it moves back to
++sles-1+, move it there before issuing the call to `crm_resource -U`:
+        
+----
+# crm_resource -M -r Email -H sles-1
+# crm_resource -U -r Email
+----
+
+Alternatively, if you only care that the resource should be moved from
+its current location, try:
+
+----
+# crm_resource -B -r Email
+----
+
+Which will instead create a negative constraint, like
+
+[source,XML]
+<rsc_location rsc="Email" node="sles-1" score="-INFINITY"/>
+
+This will achieve the desired effect, but will also have long-term
+consequences.  As the tool will warn you, the creation of a
++-INFINITY+ constraint will prevent the resource from running on that
+node until `crm_resource -U` is used.  This includes the situation
+where every other cluster node is no longer available!
+
+In some cases, such as when +resource-stickiness+ is set to
++INFINITY+, it is possible that you will end up with the problem
+described in <<node-score-equal>>.  The tool can detect
+some of these cases and deals with them by creating both
+positive and negative constraints. E.g.
+
++Email+ prefers +sles-1+ with a score of +-INFINITY+
+
++Email+ prefers +sles-2+ with a score of +INFINITY+
+
+which has the same long-term consequences as discussed earlier.
+
+[[s-failure-migration]]
+=== Moving Resources Due to Failure ===
+
+Normally, if a running resource fails, pacemaker will try to start
+it again on the same node. However if a resource fails repeatedly,
+it is possible that there is an underlying problem on that node, and you
+might desire trying a different node in such a case.
+
+indexterm:[migration-threshold]
+indexterm:[failure-timeout]
+indexterm:[start-failure-is-fatal]
+
+Pacemaker allows you to set your preference via the +migration-threshold+
+resource option.
+footnote:[
+The naming of this option was perhaps unfortunate as it is easily
+confused with live migration, the process of moving a resource from
+one node to another without stopping it.  Xen virtual guests are the
+most common example of resources that can be migrated in this manner.
+]
+
+Simply define +migration-threshold=pass:[<replaceable>N</replaceable>]+ for a resource and it will
+migrate to a new node after 'N' failures.  There is no threshold defined
+by default.  To determine the resource's current failure status and
+limits, run `crm_mon --failcounts`.
+
+By default, once the threshold has been reached, the troublesome node will no
+longer be allowed to run the failed resource until the administrator
+manually resets the resource's failcount using `crm_failcount` (after
+hopefully first fixing the failure's cause).  Alternatively, it is possible
+to expire them by setting the +failure-timeout+ option for the resource.
+
+For example, a setting of +migration-threshold=2+ and +failure-timeout=60s+
+would cause the resource to move to a new node after 2 failures, and
+allow it to move back (depending on stickiness and constraint scores) after one
+minute.
+
+There are two exceptions to the migration threshold concept:
+when a resource either fails to start or fails to stop.
+
+If the cluster property +start-failure-is-fatal+ is set to +true+ (which is the
+default), start failures cause the failcount to be set to +INFINITY+ and thus
+always cause the resource to move immediately.
+
+Stop failures are slightly different and crucial.  If a resource fails
+to stop and STONITH is enabled, then the cluster will fence the node
+in order to be able to start the resource elsewhere.  If STONITH is
+not enabled, then the cluster has no way to continue and will not try
+to start the resource elsewhere, but will try to stop it again after
+the failure timeout.
+
+[IMPORTANT]
+Please read <<s-rules-recheck>> to understand how timeouts work
+before configuring a +failure-timeout+.
+
+=== Moving Resources Due to Connectivity Changes ===
+
+You can configure the cluster to move resources when external connectivity is
+lost in two steps.
+
+==== Tell Pacemaker to Monitor Connectivity ====
+
+First, add an *ocf:pacemaker:ping* resource to the cluster.  The
+*ping* resource uses the system utility of the same name to a test whether
+list of machines (specified by DNS hostname or IPv4/IPv6 address) are
+reachable and uses the results to maintain a node attribute called +pingd+
+by default.
+footnote:[
+The attribute name is customizable, in order to allow multiple ping groups to be defined.
+]
+
+[NOTE]
+===========
+Older versions of Heartbeat required users to add ping nodes to +ha.cf+, but
+this is no longer required.
+
+Older versions of Pacemaker used a different agent *ocf:pacemaker:pingd* which
+is now deprecated in favor of *ping*. If your version of Pacemaker does not
+contain the *ping* resource agent, download the latest version from
+https://github.com/ClusterLabs/pacemaker/tree/master/extra/resources/ping
+===========
+
+Normally, the ping resource should run on all cluster nodes, which means that
+you'll need to create a clone.  A template for this can be found below
+along with a description of the most interesting parameters.
+          
+.Common Options for a 'ping' Resource
+[width="95%",cols="1m,4<",options="header",align="center"]
+|=========================================================
+
+|Field
+|Description
+
+|dampen
+|The time to wait (dampening) for further changes to occur. Use this
+ to prevent a resource from bouncing around the cluster when cluster
+ nodes notice the loss of connectivity at slightly different times.
+ indexterm:[dampen,Ping Resource Option]
+ indexterm:[Ping Resource,Option,dampen]
+
+|multiplier
+|The number of connected ping nodes gets multiplied by this value to
+ get a score. Useful when there are multiple ping nodes configured.
+ indexterm:[multiplier,Ping Resource Option]
+ indexterm:[Ping Resource,Option,multiplier]
+
+|host_list
+|The machines to contact in order to determine the current
+ connectivity status. Allowed values include resolvable DNS host
+ names, IPv4 and IPv6 addresses.
+ indexterm:[host_list,Ping Resource Option]
+ indexterm:[Ping Resource,Option,host_list]
+
+|=========================================================
+
+.An example ping cluster resource that checks node connectivity once every minute
+=====
+[source,XML]
+------------
+<clone id="Connected">
+   <primitive id="ping" provider="pacemaker" class="ocf" type="ping">
+    <instance_attributes id="ping-attrs">
+      <nvpair id="pingd-dampen" name="dampen" value="5s"/>
+      <nvpair id="pingd-multiplier" name="multiplier" value="1000"/>
+      <nvpair id="pingd-hosts" name="host_list" value="my.gateway.com www.bigcorp.com"/>
+    </instance_attributes>
+    <operations>
+      <op id="ping-monitor-60s" interval="60s" name="monitor"/>
+    </operations>
+   </primitive>
+</clone>
+------------
+=====
+
+[IMPORTANT]
+===========
+You're only half done.  The next section deals with telling Pacemaker
+how to deal with the connectivity status that +ocf:pacemaker:ping+ is
+recording.
+===========
+
+==== Tell Pacemaker How to Interpret the Connectivity Data ====
+
+[IMPORTANT]
+======
+Before attempting the following, make sure you understand
+<<ch-rules>>.
+======
+
+There are a number of ways to use the connectivity data.
+
+The most common setup is for people to have a single ping
+target (e.g. the service network's default gateway), to prevent the cluster
+from running a resource on any unconnected node.
+
+.Don't run a resource on unconnected nodes
+=====
+[source,XML]
+-------
+<rsc_location id="WebServer-no-connectivity" rsc="Webserver">
+   <rule id="ping-exclude-rule" score="-INFINITY" >
+    <expression id="ping-exclude" attribute="pingd" operation="not_defined"/>
+   </rule>
+</rsc_location>
+-------
+=====
+
+A more complex setup is to have a number of ping targets configured.
+You can require the cluster to only run resources on nodes that can
+connect to all (or a minimum subset) of them.
+
+.Run only on nodes connected to three or more ping targets.
+=====
+[source,XML]
+-------
+<primitive id="ping" provider="pacemaker" class="ocf" type="ping">
+... <!-- omitting some configuration to highlight important parts -->
+      <nvpair id="pingd-multiplier" name="multiplier" value="1000"/>
+...
+</primitive>
+...
+<rsc_location id="WebServer-connectivity" rsc="Webserver">
+   <rule id="ping-prefer-rule" score="-INFINITY" >
+      <expression id="ping-prefer" attribute="pingd" operation="lt" value="3000"/>
+   </rule>
+</rsc_location>
+-------
+=====
+
+Alternatively, you can tell the cluster only to _prefer_ nodes with the best
+connectivity.  Just be sure to set +multiplier+ to a value higher than
+that of +resource-stickiness+ (and don't set either of them to
++INFINITY+).
+
+.Prefer the node with the most connected ping nodes
+=====
+[source,XML]
+-------
+<rsc_location id="WebServer-connectivity" rsc="Webserver">
+   <rule id="ping-prefer-rule" score-attribute="pingd" >
+    <expression id="ping-prefer" attribute="pingd" operation="defined"/>
+   </rule>
+</rsc_location>
+-------
+=====
+
+It is perhaps easier to think of this in terms of the simple
+constraints that the cluster translates it into.  For example, if
+*sles-1* is connected to all five ping nodes but *sles-2* is only
+connected to two, then it would be as if you instead had the following
+constraints in your configuration:
+
+.How the cluster translates the above location constraint
+=====
+[source,XML]
+-------
+<rsc_location id="ping-1" rsc="Webserver" node="sles-1" score="5000"/>
+<rsc_location id="ping-2" rsc="Webserver" node="sles-2" score="2000"/>
+-------
+=====
+
+The advantage is that you don't have to manually update any
+constraints whenever your network connectivity changes.
+
+You can also combine the concepts above into something even more
+complex.  The example below shows how you can prefer the node with the
+most connected ping nodes provided they have connectivity to at least
+three (again assuming that +multiplier+ is set to 1000).
+
+.A more complex example of choosing a location based on connectivity
+=====
+[source,XML]
+-------
+<rsc_location id="WebServer-connectivity" rsc="Webserver">
+   <rule id="ping-exclude-rule" score="-INFINITY" >
+    <expression id="ping-exclude" attribute="pingd" operation="lt" value="3000"/>
+   </rule>
+   <rule id="ping-prefer-rule" score-attribute="pingd" >
+    <expression id="ping-prefer" attribute="pingd" operation="defined"/>
+   </rule>
+</rsc_location>
+-------
+=====
+
+=== Migrating Resources ===
+
+Normally, when the cluster needs to move a resource, it fully restarts
+the resource (i.e. stops the resource on the current node
+and starts it on the new node).
+
+However, some types of resources, such as Xen virtual guests, are able to move to
+another location without loss of state (often referred to as live migration
+or hot migration). In pacemaker, this is called resource migration.
+Pacemaker can be configured to migrate a resource when moving it,
+rather than restarting it.
+
+Not all resources are able to migrate; see the Migration Checklist
+below, and those that can, won't do so in all situations.
+Conceptually, there are two requirements from which the other
+prerequisites follow:
+
+* The resource must be active and healthy at the old location; and
+* everything required for the resource to run must be available on
+  both the old and new locations.
+
+The cluster is able to accommodate both 'push' and 'pull' migration models
+by requiring the resource agent to support two special actions:
++migrate_to+ (performed on the current location) and +migrate_from+
+(performed on the destination).
+
+In push migration, the process on the current location transfers the
+resource to the new location where is it later activated.  In this
+scenario, most of the work would be done in the +migrate_to+ action
+and, if anything, the activation would occur during +migrate_from+.
+
+Conversely for pull, the +migrate_to+ action is practically empty and
++migrate_from+ does most of the work, extracting the relevant resource
+state from the old location and activating it.
+
+There is no wrong or right way for a resource agent to implement migration,
+as long as it works.
+
+.Migration Checklist
+* The resource may not be a clone.
+* The resource must use an OCF style agent.
+* The resource must not be in a failed or degraded state.
+* The resource agent must support +migrate_to+ and
+  +migrate_from+ actions, and advertise them in its metadata.
+* The resource must have the +allow-migrate+ meta-attribute set to
+  +true+ (which is not the default).
+
+If an otherwise migratable resource depends on another resource
+via an ordering constraint, there are special situations in which it will be
+restarted rather than migrated.
+
+For example, if the resource depends on a clone, and at the time the resource
+needs to be moved, the clone has instances that are stopping and instances
+that are starting, then the resource will be restarted.
+The Policy Engine is not yet able to model this
+situation correctly and so takes the safer (if less optimal) path.
+
+In pacemaker 1.1.11 and earlier, a migratable resource will be restarted
+when moving if it directly or indirectly depends on 'any' primitive or group
+resources.
+
+Even in newer versions, if a migratable resource depends on a non-migratable
+resource, and both need to be moved, the migratable resource will be restarted.
+
+[[s-reusing-config-elements]]
+== Reusing Rules, Options and Sets of Operations ==
+
+Sometimes a number of constraints need to use the same set of rules,
+and resources need to set the same options and parameters.  To
+simplify this situation, you can refer to an existing object using an
++id-ref+ instead of an id.
+
+So if for one resource you have
+
+[source,XML]
+------
+<rsc_location id="WebServer-connectivity" rsc="Webserver">
+   <rule id="ping-prefer-rule" score-attribute="pingd" >
+    <expression id="ping-prefer" attribute="pingd" operation="defined"/>
+   </rule>
+</rsc_location>
+------
+
+Then instead of duplicating the rule for all your other resources, you can instead specify:
+
+.Referencing rules from other constraints
+=====
+[source,XML]
+-------
+<rsc_location id="WebDB-connectivity" rsc="WebDB">
+      <rule id-ref="ping-prefer-rule"/>
+</rsc_location>
+-------
+=====
+
+[IMPORTANT]
+===========
+The cluster will insist that the +rule+ exists somewhere.  Attempting
+to add a reference to a non-existing rule will cause a validation
+failure, as will attempting to remove a +rule+ that is referenced
+elsewhere.
+===========
+
+The same principle applies for +meta_attributes+ and
++instance_attributes+ as illustrated in the example below:
+
+.Referencing attributes, options, and operations from other resources
+=====
+[source,XML]
+-------
+<primitive id="mySpecialRsc" class="ocf" type="Special" provider="me">
+   <instance_attributes id="mySpecialRsc-attrs" score="1" >
+     <nvpair id="default-interface" name="interface" value="eth0"/>
+     <nvpair id="default-port" name="port" value="9999"/>
+   </instance_attributes>
+   <meta_attributes id="mySpecialRsc-options">
+     <nvpair id="failure-timeout" name="failure-timeout" value="5m"/>
+     <nvpair id="migration-threshold" name="migration-threshold" value="1"/>
+     <nvpair id="stickiness" name="resource-stickiness" value="0"/>
+   </meta_attributes>
+   <operations id="health-checks">
+     <op id="health-check" name="monitor" interval="60s"/>
+     <op id="health-check" name="monitor" interval="30min"/>
+   </operations>
+</primitive>
+<primitive id="myOtherlRsc" class="ocf" type="Other" provider="me">
+   <instance_attributes id-ref="mySpecialRsc-attrs"/>
+   <meta_attributes id-ref="mySpecialRsc-options"/>
+   <operations id-ref="health-checks"/>
+</primitive>
+-------
+=====
+
+== Reloading Services After a Definition Change ==
+
+The cluster automatically detects changes to the definition of
+services it manages.  The normal response is to stop the
+service (using the old definition) and start it again (with the new
+definition).  This works well, but some services are smarter and can
+be told to use a new set of options without restarting.
+
+To take advantage of this capability, the resource agent must:
+
+. Accept the +reload+ operation and perform any required actions.
+  _The actions here depend completely on your application!_
++
+.The DRBD agent's logic for supporting +reload+
+=====
+[source,Bash]
+-------
+case $1 in
+    start)
+        drbd_start
+        ;;
+    stop)
+        drbd_stop
+        ;;
+    reload)
+        drbd_reload
+        ;;
+    monitor)
+        drbd_monitor
+        ;;
+    *)
+        drbd_usage
+        exit $OCF_ERR_UNIMPLEMENTED
+        ;;
+esac
+exit $?
+-------
+=====
+. Advertise the +reload+ operation in the +actions+ section of its metadata
++
+.The DRBD Agent Advertising Support for the +reload+ Operation
+=====
+[source,XML]
+-------
+<?xml version="1.0"?>
+  <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+  <resource-agent name="drbd">
+    <version>1.1</version>
+    
+    <longdesc lang="en">
+      Master/Slave OCF Resource Agent for DRBD
+    </longdesc>
+    
+    ...
+    
+    <actions>
+      <action name="start"   timeout="240" />
+      <action name="reload"  timeout="240" />
+      <action name="promote" timeout="90" />
+      <action name="demote"  timeout="90" />
+      <action name="notify"  timeout="90" />
+      <action name="stop"    timeout="100" />
+      <action name="meta-data"    timeout="5" />
+      <action name="validate-all" timeout="30" />
+    </actions>
+  </resource-agent>
+-------
+=====
+. Advertise one or more parameters that can take effect using +reload+.
++
+Any parameter with the +unique+ set to 0 is eligible to be used in this way.
++
+.Parameter that can be changed using reload
+=====
+[source,XML]
+-------
+<parameter name="drbdconf" unique="0">
+    <longdesc lang="en">Full path to the drbd.conf file.</longdesc>
+    <shortdesc lang="en">Path to drbd.conf</shortdesc>
+    <content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
+</parameter>
+-------
+=====
+
+Once these requirements are satisfied, the cluster will automatically
+know to reload the resource (instead of restarting) when a non-unique
+field changes.
+      
+[NOTE]
+======
+Metadata will not be re-read unless the resource needs to be started. This may
+mean that the resource will be restarted the first time, even though you
+changed a parameter with +unique=0+.
+======
+
+[NOTE]
+======
+If both a unique and non-unique field are changed simultaneously, the
+resource will still be restarted.
+======

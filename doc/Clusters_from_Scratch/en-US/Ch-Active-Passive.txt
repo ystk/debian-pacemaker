@@ -1,0 +1,423 @@
+= Create an Active/Passive Cluster =
+
+== Explore the Existing Configuration ==
+
+When Pacemaker starts up, it automatically records the number and details
+of the nodes in the cluster, as well as which stack is being used and the
+version of Pacemaker being used.
+
+The first few lines of output should look like this:
+
+----
+[root@pcmk-1 ~]# pcs status
+Cluster name: mycluster
+WARNING: no stonith devices and stonith-enabled is not false
+Last updated: Tue Dec 16 16:15:29 2014
+Last change: Tue Dec 16 15:49:47 2014
+Stack: corosync
+Current DC: pcmk-2 (2) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+0 Resources configured
+
+
+Online: [ pcmk-1 pcmk-2 ]
+----
+
+For those who are not of afraid of XML, you can see the raw cluster
+configuration and status by using the `pcs cluster cib` command.
+
+.The last XML you'll see in this document
+======
+----
+[root@pcmk-1 ~]# pcs cluster cib
+----
+[source,XML]
+----
+<cib crm_feature_set="3.0.9" validate-with="pacemaker-2.3" epoch="5" num_updates="8" admin_epoch="0" cib-last-written="Tue Dec 16 15:49:47 2014" have-quorum="1" dc-uuid="2">
+  <configuration>
+    <crm_config>
+      <cluster_property_set id="cib-bootstrap-options">
+        <nvpair id="cib-bootstrap-options-have-watchdog" name="have-watchdog" value="false"/>
+        <nvpair id="cib-bootstrap-options-dc-version" name="dc-version" value="1.1.12-a14efad"/>
+        <nvpair id="cib-bootstrap-options-cluster-infrastructure" name="cluster-infrastructure" value="corosync"/>
+        <nvpair id="cib-bootstrap-options-cluster-name" name="cluster-name" value="mycluster"/>
+      </cluster_property_set>
+    </crm_config>
+    <nodes>
+      <node id="1" uname="pcmk-1"/>
+      <node id="2" uname="pcmk-2"/>
+    </nodes>
+    <resources/>
+    <constraints/>
+  </configuration>
+  <status>
+    <node_state id="2" uname="pcmk-2" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <lrm id="2">
+        <lrm_resources/>
+      </lrm>
+      <transient_attributes id="2">
+        <instance_attributes id="status-2">
+          <nvpair id="status-2-shutdown" name="shutdown" value="0"/>
+          <nvpair id="status-2-probe_complete" name="probe_complete" value="true"/>
+        </instance_attributes>
+      </transient_attributes>
+    </node_state>
+    <node_state id="1" uname="pcmk-1" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <lrm id="1">
+        <lrm_resources/>
+      </lrm>
+      <transient_attributes id="1">
+        <instance_attributes id="status-1">
+          <nvpair id="status-1-shutdown" name="shutdown" value="0"/>
+          <nvpair id="status-1-probe_complete" name="probe_complete" value="true"/>
+        </instance_attributes>
+      </transient_attributes>
+    </node_state>
+  </status>
+</cib>
+----
+======
+
+Before we make any changes, it's a good idea to check the validity of
+the configuration.
+
+----
+[root@pcmk-1 ~]# crm_verify -L -V
+   error: unpack_resources: Resource start-up disabled since no STONITH resources have been defined
+   error: unpack_resources: Either configure some or disable STONITH with the stonith-enabled option
+   error: unpack_resources: NOTE: Clusters with shared data need STONITH to ensure data integrity
+Errors found during check: config not valid
+----
+
+As you can see, the tool has found some errors.
+
+In order to guarantee the safety of your data,
+footnote:[If the data is corrupt, there is little point in continuing to make it available]
+the default for STONITH
+footnote:[A common node fencing mechanism. Used to ensure data integrity by powering off "bad" nodes]
+in Pacemaker is *enabled*. However, it also knows when no STONITH configuration has been
+supplied and reports this as a problem (since the cluster would not be
+able to make progress if a situation requiring node fencing arose).
+
+We will disable this feature for now and configure it later.
+
+To disable STONITH, set the *stonith-enabled* cluster option to
+false:
+
+----
+[root@pcmk-1 ~]# pcs property set stonith-enabled=false
+[root@pcmk-1 ~]# crm_verify -L
+----
+
+With the new cluster option set, the configuration is now valid.
+
+[WARNING]
+=========
+The use of `stonith-enabled=false` is completely inappropriate for a
+production cluster. It tells the cluster to simply pretend that failed nodes
+are safely powered off. Some vendors will refuse to support clusters that have
+STONITH disabled.
+
+We disable STONITH here only to defer the discussion of its
+configuration, which can differ widely from one installation to the
+next. See <<_what_is_stonith>> for information on why STONITH is important
+and details on how to configure it.
+=========
+
+== Add a Resource ==
+
+Our first resource will be a unique IP address that the cluster can bring up on
+either node. Regardless of where any cluster service(s) are running, end
+users need a consistent address to contact them on. Here, I will choose
+192.168.122.120 as the floating address, give it the imaginative name ClusterIP
+and tell the cluster to check whether it is running every 30 seconds.
+
+[WARNING]
+===========
+The chosen address must not already be in use on the network.
+Do not reuse an IP address one of the nodes already has configured.
+===========
+
+----
+[root@pcmk-1 ~]# pcs resource create ClusterIP ocf:heartbeat:IPaddr2 \ 
+    ip=192.168.122.120 cidr_netmask=32 op monitor interval=30s
+----
+
+Another important piece of information here is *ocf:heartbeat:IPaddr2*.
+This tells Pacemaker three things about the resource you want to add:
+
+* The first field (*ocf* in this case) is the standard to which the resource
+script conforms and where to find it.
+
+* The second field (*heartbeat* in this case) is standard-specific; for OCF
+resources, it tells the cluster which OCF namespace the resource script is in.
+
+* The third field (*IPaddr2* in this case) is the name of the resource script.
+
+To obtain a list of the available resource standards (the *ocf* part of
+*ocf:heartbeat:IPaddr2*), run:
+
+----
+[root@pcmk-1 ~]# pcs resource standards
+ocf
+lsb
+service
+systemd
+stonith
+----
+
+To obtain a list of the available OCF resource providers (the *heartbeat*
+part of *ocf:heartbeat:IPaddr2*), run:
+
+----
+[root@pcmk-1 ~]# pcs resource providers
+heartbeat
+openstack
+pacemaker
+----
+
+Finally, if you want to see all the resource agents available for
+a specific OCF provider (the *IPaddr2* part of *ocf:heartbeat:IPaddr2*), run:
+
+----
+[root@pcmk-1 ~]# pcs resource agents ocf:heartbeat
+CTDB
+Delay
+Dummy
+Filesystem
+IPaddr
+IPaddr2
+.
+. (skipping lots of resources to save space)
+.
+rsyncd
+slapd
+symlink
+tomcat
+----
+
+Now, verify that the IP resource has been added, and display the cluster's
+status to see that it is now active:
+
+----
+[root@pcmk-1 ~]# pcs status
+Cluster name: mycluster
+Last updated: Tue Dec 16 17:44:40 2014
+Last change: Tue Dec 16 17:44:26 2014
+Stack: corosync
+Current DC: pcmk-1 (1) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+1 Resources configured
+
+
+Online: [ pcmk-1 pcmk-2 ]
+
+Full list of resources:
+
+ ClusterIP	(ocf::heartbeat:IPaddr2):	Started pcmk-1 
+
+PCSD Status:
+  pcmk-1: Online
+  pcmk-2: Online
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+----
+
+== Perform a Failover ==
+
+Since our ultimate goal is high availability, we should test failover of
+our new resource before moving on.
+
+First, find the node on which the IP address is running.
+
+----
+[root@pcmk-1 ~]# pcs status
+Cluster name: mycluster
+Last updated: Tue Dec 16 17:44:40 2014
+Last change: Tue Dec 16 17:44:26 2014
+Stack: corosync
+Current DC: pcmk-1 (1) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+1 Resources configured
+
+
+Online: [ pcmk-1 pcmk-2 ]
+
+Full list of resources:
+
+ ClusterIP	(ocf::heartbeat:IPaddr2):	Started pcmk-1 
+----
+
+You can see that the status of the *ClusterIP* resource
+is *Started* on a particular node (in this example, *pcmk-1*).
+Shut down Pacemaker and Corosync on that machine to trigger a failover.
+
+----
+[root@pcmk-1 ~]# pcs cluster stop pcmk-1
+Stopping Cluster...
+----
+
+[NOTE]
+======
+A cluster command such as +pcs cluster stop pass:[<replaceable>nodename</replaceable>]+ can be run
+from any node in the cluster, not just the affected node.
+======
+
+Verify that pacemaker and corosync are no longer running:
+----
+[root@pcmk-1 ~]# pcs status
+Error: cluster is not currently running on this node
+----
+
+Go to the other node, and check the cluster status.
+
+----
+[root@pcmk-2 ~]# pcs status
+Cluster name: mycluster
+Last updated: Wed Dec 17 10:30:56 2014
+Last change: Tue Dec 16 17:44:26 2014
+Stack: corosync
+Current DC: pcmk-2 (2) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+1 Resources configured
+
+
+Online: [ pcmk-2 ]
+OFFLINE: [ pcmk-1 ]
+
+Full list of resources:
+
+ ClusterIP	(ocf::heartbeat:IPaddr2):	Started pcmk-2 
+
+PCSD Status:
+  pcmk-1: Online
+  pcmk-2: Online
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+----
+
+Notice that *pcmk-1* is *OFFLINE* for cluster purposes (its *PCSD* is still
+*Online*, allowing it to receive `pcs` commands, but it is not participating in
+the cluster).
+
+Also notice that *ClusterIP* is now running on *pcmk-2* -- failover happened
+automatically, and no errors are reported.
+
+[IMPORTANT]
+.Quorum
+====
+If a cluster splits into two (or more) groups of nodes that can no longer
+communicate with each other (aka. _partitions_), _quorum_ is used to prevent
+resources from starting on more nodes than desired, which would risk
+data corruption.
+
+A cluster has quorum when more than half of all known nodes are online in
+the same partition, or for the mathematically inclined, whenever the following
+equation is true:
+....
+total_nodes < 2 * active_nodes
+....
+
+For example, if a 5-node cluster split into 3- and 2-node paritions,
+the 3-node partition would have quorum and could continue serving resources.
+If a 6-node cluster split into two 3-node partitions, neither partition
+would have quorum; pacemaker's default behavior in such cases is to
+stop all resources, in order to prevent data corruption.
+
+Two-node clusters are a special case. By the above definition,
+a two-node cluster would only have quorum when both nodes are
+running. This would make the creation of a two-node cluster pointless,
+footnote:[Some would argue that two-node clusters are always pointless, but that is an argument for another time]
+but corosync has the ability to treat two-node clusters as if only one node
+is required for quorum.
+
+The `pcs cluster setup` command will automatically configure *two_node: 1*
+in +corosync.conf+, so a two-node cluster will "just work".
+
+If you are using a different cluster shell, you will have to configure
++corosync.conf+ appropriately yourself. If you are using older versions of
+corosync, you will have to ignore quorum at the pacemaker level, using `pcs
+property set no-quorum-policy=ignore` (or the equivalent command if you are
+using a different cluster shell).
+====
+
+Now, simulate node recovery by restarting the cluster stack on *pcmk-1*, and
+check the cluster's status. (It may take a little while before the cluster
+gets going on the node, but it eventually will look like the below.)
+
+----
+[root@pcmk-1 ~]# pcs cluster start pcmk-1
+pcmk-1: Starting Cluster...
+[root@pcmk-1 ~]# pcs status
+Cluster name: mycluster
+Last updated: Wed Dec 17 10:50:11 2014
+Last change: Tue Dec 16 17:44:26 2014
+Stack: corosync
+Current DC: pcmk-2 (2) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+1 Resources configured
+
+
+Online: [ pcmk-1 pcmk-2 ]
+
+Full list of resources:
+
+ ClusterIP	(ocf::heartbeat:IPaddr2):	Started pcmk-2 
+
+PCSD Status:
+  pcmk-1: Online
+  pcmk-2: Online
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+----
+
+[NOTE]
+======
+With older versions of pacemaker, the cluster might move the IP back to its
+original location (*pcmk-1*). Usually, this is no longer the case.
+======
+
+== Prevent Resources from Moving after Recovery ==
+
+In most circumstances, it is highly desirable to prevent healthy
+resources from being moved around the cluster. Moving resources almost
+always requires a period of downtime. For complex services such as
+databases, this period can be quite long.
+
+To address this, Pacemaker has the concept of resource _stickiness_,
+which controls how strongly a service prefers to stay running where it
+is. You may like to think of it as the "cost" of any downtime. By
+default, Pacemaker assumes there is zero cost associated with moving
+resources and will do so to achieve "optimal"
+footnote:[Pacemaker's definition of optimal may not always agree with that of a
+human's. The order in which Pacemaker processes lists of resources and nodes
+creates implicit preferences in situations where the administrator has not
+explicitly specified them.]
+resource placement. We can specify a different stickiness for every
+resource, but it is often sufficient to change the default.
+
+----
+[root@pcmk-1 ~]# pcs resource defaults resource-stickiness=100
+[root@pcmk-1 ~]# pcs resource defaults
+resource-stickiness: 100
+----
+
+[NOTE]
+======
+Older versions of `pcs` required that `rsc` be added after `resource` in the
+above commands.
+======

@@ -19,26 +19,36 @@
 #
 MAINTAINERCLEANFILES    = Makefile.in
 
-CLEANFILES      = LSBDummy
+CLEANFILES      = LSBDummy HBDummy
 
 EXTRA_DIST      = $(cts_SCRIPTS) $(cts_DATA)
 
 ctsdir		= $(datadir)/$(PACKAGE)/tests/cts
+ctslibdir	= $(pyexecdir)/cts
 
-cts_PYTHON	=	CTSvars.py		\
+ctslib_PYTHON	=	__init__.py		\
+			CTSvars.py		\
 			CM_lha.py		\
 			CM_ais.py		\
 			CTS.py			\
 			CTSaudits.py		\
-			CTSlab.py		\
 			CTStests.py		\
 			CTSscenarios.py		\
-			extracttests.py		\
-			OCFIPraTest.py		\
-			CIB.py
+			CIB.py			\
+			cib_xml.py		\
+			environment.py		\
+			logging.py		\
+			patterns.py		\
+			remote.py		\
+			watcher.py
 
-cts_DATA	=	README cts.supp
+cts_DATA	=	README.md cts.supp
 
-cts_SCRIPTS	=				\
-			cluster_test		\
-			LSBDummy
+cts_SCRIPTS	=	cts		\
+			CTSlab.py		\
+			lxc_autogen.sh	\
+			LSBDummy		\
+			HBDummy		\
+			$(top_srcdir)/fencing/fence_dummy
+
+SUBDIRS	= benchmark

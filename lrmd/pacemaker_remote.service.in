@@ -1,0 +1,24 @@
+[Unit]
+Description=Pacemaker Remote Service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+KillMode=process
+NotifyAccess=none
+EnvironmentFile=-/etc/sysconfig/pacemaker
+
+ExecStart=@sbindir@/pacemaker_remoted
+
+TimeoutStopSec=30s
+TimeoutStartSec=30s
+
+# Restart options include: no, on-success, on-failure, on-abort or always
+Restart=on-failure
+
+# crm_perror() writes directly to stderr, so ignore it here
+# to avoid double-logging with the wrong format
+StandardError=null

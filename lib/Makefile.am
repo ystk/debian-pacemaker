@@ -17,11 +17,32 @@
 #
 MAINTAINERCLEANFILES    = Makefile.in
 
+EXTRA_DIST		= pacemaker.pc.in $(target_LIBS:%=%.in)
+
+LIBS			= cib lrmd service pengine fencing cluster
+
+target_LIBS		= $(LIBS:%=pacemaker-%.pc)
+
+target_PACKAGE		= pacemaker.pc
+
+all-local: $(target_LIBS) $(target_PACKAGE)
+
+install-exec-local: $(target_LIBS) $(target_PACKAGE)
+	$(INSTALL) -d $(DESTDIR)/$(libdir)/pkgconfig
+	$(INSTALL) -m 644 $(target_LIBS) $(target_PACKAGE) $(DESTDIR)/$(libdir)/pkgconfig
+
+uninstall-local:
+	cd $(DESTDIR)/$(libdir)/pkgconfig && rm -f $(target_LIBS) $(target_PACKAGE)
+	rmdir $(DESTDIR)/$(libdir)/pkgconfig 2> /dev/null || :
+
+clean-local:
+	rm -f *.pc
+
 ## Subdirectories...
-SUBDIRS	= common pengine transition cib fencing plugins
+SUBDIRS	= gnu common pengine transition cib fencing services lrmd cluster
 DIST_SUBDIRS =  $(SUBDIRS) ais
 
-if BUILD_AIS_SUPPORT
+if BUILD_CS_PLUGIN
 SUBDIRS			+= ais
 endif
 

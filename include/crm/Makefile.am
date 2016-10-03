@@ -19,6 +19,7 @@ MAINTAINERCLEANFILES	= Makefile.in
 
 headerdir=$(pkgincludedir)/crm
 
-header_HEADERS		= crm.h cib.h msg_xml.h transition.h ais.h cib_util.h cib_ops.h
+noinst_HEADERS		= 
+header_HEADERS		= crm.h cib.h attrd.h msg_xml.h transition.h stonith-ng.h cluster.h lrmd.h services.h error.h compatibility.h
 
-SUBDIRS                 = common pengine
+SUBDIRS                 = common pengine cib fencing cluster

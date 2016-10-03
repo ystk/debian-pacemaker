@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 #
-#	HealthCPU OCF RA. Measures CPUs ideling and writes
+#	HealthCPU OCF RA. Measures CPUs idling and writes
 #	#health-cpu status into the CIB
 #
 # Copyright (c) 2009 Michael Schwartzkopff
@@ -38,7 +38,9 @@
 #######################################################################
 # Initialization:
 
-. ${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs
+: ${OCF_FUNCTIONS=${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs}
+. ${OCF_FUNCTIONS}
+: ${__OCF_ACTION=$1}
 
 #######################################################################
 
@@ -50,7 +52,7 @@ meta_data() {
 <version>0.1</version>
 
 <longdesc lang="en">
-Systhem health agent that measures the CPU ideling and updates the #health-cpu attribute.
+Systhem health agent that measures the CPU idling and updates the #health-cpu attribute.
 </longdesc>
 <shortdesc lang="en">System health CPU usage</shortdesc>
 
@@ -96,6 +98,13 @@ END
 
 #######################################################################
 
+# don't exit on TERM, to test that lrmd makes sure that we do exit
+trap sigterm_handler TERM
+sigterm_handler() {
+	ocf_log info "They use TERM to bring us down. No such luck."
+	return
+}
+
 dummy_usage() {
 	cat <<END
 usage: $0 {start|stop|monitor|validate-all|meta-data}
@@ -127,7 +136,7 @@ dummy_monitor() {
 	
 	if [ -f ${OCF_RESKEY_state} ]; then
 
-	  IDLE=`top -b -n2 | grep Cpu | tail -1 | awk -F",|\.[0-9]%id" '{ print $4 }'`
+	  IDLE=`top -b -n2 | grep Cpu | tail -1 | awk -F",|.[0-9][ %]id" '{ print $4 }'`
 	  # echo "System idle: " $IDLE
 	  # echo "$OCF_RESKEY_red_limit"
 	  # echo $OCF_RESKEY_yellow_limit

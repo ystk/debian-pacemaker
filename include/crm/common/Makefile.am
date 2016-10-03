@@ -20,4 +20,8 @@ MAINTAINERCLEANFILES = Makefile.in
 
 headerdir=$(pkgincludedir)/crm/common
 
-header_HEADERS = xml.h ipc.h msg.h cluster.h util.h iso8601.h mainloop.h
+header_HEADERS = xml.h ipc.h util.h iso8601.h mainloop.h logging.h
+noinst_HEADERS = io.h ipcs.h procfs.h
+if BUILD_CIBSECRETS
+noinst_HEADERS += cib_secrets.h
+endif

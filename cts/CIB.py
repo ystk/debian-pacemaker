@@ -1,537 +1,507 @@
 '''CTS: Cluster Testing System: CIB generator
 '''
-__copyright__='''
+__copyright__ = '''
 Author: Andrew Beekhof <abeekhof@suse.de>
 Copyright (C) 2008 Andrew Beekhof
 '''
 
-from UserDict import UserDict
-import sys, time, types, syslog, os, struct, string, signal, traceback, warnings
+import os, string, warnings
 
-from CTSvars import *
-from CTS  import ClusterManager
+from cts.CTSvars import *
+
 
 class CibBase:
+    def __init__(self, Factory, tag, _id, **kwargs):
+        self.tag = tag
+        self.name = _id
+        self.kwargs = kwargs
+        self.children = []
+        self.Factory = Factory
+
+    def __repr__(self):
+        return "%s-%s" % (self.tag, self.name)
+
+    def add_child(self, child):
+        self.children.append(child)
+
+    def __setitem__(self, key, value):
+        if value:
+            self.kwargs[key] = value
+        else:
+            self.kwargs.pop(key, None)
+
+from cib_xml import *
+
+
+class ConfigBase:
     cts_cib = None
-    cib_tmpfile = None
     version = "unknown"
     feature_set = "unknown"
-    target = None
+    Factory = None
 
-    def __init__(self, CM, tmpfile=None):
+    def __init__(self, CM, factory, tmpfile=None):
         self.CM = CM
-        #self.target = self.CM.Env["nodes"][0]
+        self.Factory = factory
 
         if not tmpfile:
             warnings.filterwarnings("ignore")
-            self.cib_tmpfile=os.tmpnam()
+            tmpfile = os.tmpnam()
             warnings.resetwarnings()
-        else:
-            self.cib_tmpfile = tmpfile
+
+        self.Factory.tmpfile = tmpfile
 
     def version(self):
         return self.version
 
     def NextIP(self):
-        fields = string.split(self.CM.Env["IPBase"], '.')
-        fields[3] = str(int(fields[3])+1)
-        ip = string.join(fields, '.')
+        ip = self.CM.Env["IPBase"]
+        if ":" in ip:
+            (prefix, sep, suffix) = ip.rpartition(":")
+            suffix = str(hex(int(suffix, 16)+1)).lstrip("0x")
+        else:
+            (prefix, sep, suffix) = ip.rpartition(".")
+            suffix = str(int(suffix)+1)
+
+        ip = prefix + sep + suffix
         self.CM.Env["IPBase"] = ip
-        return ip
-
-class CIB06(CibBase):
-    version = "transitional-0.6"
-    coloc_template = """<rsc_colocation id="%s" from="%s" to="%s" to_role="%s" score="%s"/>"""
-
-    cib_template ='''
-<cib admin_epoch="1" epoch="0" num_updates="0" remote_access_port="9898">
-  <configuration>
-     <crm_config>  %s 
-     </crm_config>
-     <nodes/>
-     <resources> %s 
-     </resources>
-     <constraints> %s 
-     </constraints>
-    </configuration>
-    <status/>
-</cib> '''
-
-    cib_option_template = '''
-    <cluster_property_set id="cib-bootstrap-options"><attributes>
-        <nvpair id="cib-bootstrap-1" name="start-failure-is-fatal" value="false"/>
-        <nvpair id="cib-bootstrap-2" name="stonith-enabled"      value="%d"/>
-        <nvpair id="cib-bootstrap-3" name="pe-input-series-max"  value="30000"/>
-        <nvpair id="cib-bootstrap-4" name="shutdown-escalation"  value="5min"/>
-        <nvpair id="cib-bootstrap-5" name="startup-fencing"      value="false"/>
-        <nvpair id="cib-bootstrap-6" name="batch-limit"          value="10"/>
-        <nvpair id="cib-bootstrap-7" name="no-quorum-policy"     value="%s"/>
-  </attributes></cluster_property_set>'''
-
-    lsb_resource = ''' 
-        <primitive id="lsb_dummy" class="lsb" type="''' +CTSvars.CTS_home+ '''/LSBDummy">
-          <operations>
-            <op id="ocf_lsb_monitor" name="monitor" interval="5s"/>
-          </operations>
-        </primitive> '''
-
-    clustermon_location_constraint = ''' 
-        <rsc_location id="run_cluster_mon" rsc="cluster_mon">
-          <rule id="cant_run_cluster_mon" score="-INFINITY" boolean_op="and">
-             <expression id="mon_expr" attribute="#is_dc" operation="eq" value="false"/>
-          </rule>
-        </rsc_location> '''
-
-    resource_group_template = '''<group id="group-1">%s %s %s</group>'''
-
-    per_node_constraint_template = ''' 
-        <rsc_location id="preferred-%s" rsc="%s" node="%s" score="100"/>''' 
-
-    pingd_constraint_template = '''
-        <rsc_location id="%s-is-connected" rsc="%s">
-          <rule id="%s-connected-rule" role="%s" score="-INFINITY">
-            <expression id="%s-connected-expr" attribute="connected" operation="lt" value="%d"/>
-          </rule>
-        </rsc_location>''' 
-
-    dummy_resource_template = ''' 
-        <primitive id="%s" class="ocf" type="Dummy" provider="heartbeat">
-          <operations>
-             <op id="mon-%s" name="monitor" interval="P10S"/>
-          </operations>
-          <instance_attributes id="%s-attrs"><attributes>
-               <nvpair id="migrate-%s" name="allow_migrate" value="1"/>
-           </attributes></instance_attributes>
-        </primitive> '''
-    
-    clustermon_resource_template = ''' 
-        <primitive id="cluster_mon" class="ocf" type="ClusterMon" provider="heartbeat">
-          <operations>
-            <op id="cluster_mon-1" name="monitor" interval="5s" prereq="nothing"/>
-            <op id="cluster_mon-2" name="start" prereq="nothing"/>
-          </operations>
-          <instance_attributes id="cluster_mon-attrs">
-            <attributes>
-               <nvpair id="cluster_mon-1" name="htmlfile" value="/suse/abeekhof/Export/cluster.html"/>
-               <nvpair id="cluster_mon-2" name="update" value="10"/>
-               <nvpair id="cluster_mon-3" name="extra_options" value="-n -r"/>
-               <nvpair id="cluster_mon-4" name="user" value="abeekhof"/>
-           </attributes>
-          </instance_attributes>
-        </primitive> ''' 
-
-    master_slave_resource = ''' 
-        <master_slave id="master-1">
-          <instance_attributes id="master_rsc">
-            <attributes>
-              <nvpair id="clone_max_1" name="clone_max" value="%d"/>
-              <nvpair id="clone_node_max_2" name="clone_node_max" value="%d"/>
-              <nvpair id="master_max_3" name="master_max" value="%d"/>
-              <nvpair id="master_node_max_4" name="master_node_max" value="%d"/>
-            </attributes>
-          </instance_attributes>
-          <primitive id="ocf_msdummy" class="ocf" type="Stateful" provider="heartbeat">
-            <operations>
-              <op id="ocf_msdummy_monitor" name="monitor" interval="15s"/>
-              <op id="ocf_msdummy_monitor_master" name="monitor" interval="16s" role="Master"/>
-            </operations>
-          </primitive>
-        </master_slave>'''
-
-    pingd_resource_template = """ 
-        <clone id="Connectivity">
-          <meta_attributes id="pingd-opts">
-            <attributes>
-              <nvpair id="pingd-opt-1" name="globally_unique" value="false"/>
-            </attributes>
-          </meta_attributes>
-          <primitive id="pingd" class="ocf" provider="pacemaker" type="pingd">
-            <operations>
-              <op id="pingd-op-1" name="monitor" interval="120s"/>
-            </operations>
-            <instance_attributes id="pingd-attrs">
-              <attributes>
-                <nvpair id="pingd-attr-1" name="host_list" value="%s"/>
-                <nvpair id="pingd-attr-2" name="name" value="connected"/>
-              </attributes>
-            </instance_attributes>
-          </primitive>
-        </clone>"""
-
-    stonith_resource_template = """ 
-        <clone id="DoFencing">
-          <meta_attributes id="fencing">
-            <attributes>
-              <nvpair id="DoFencing-attr-1" name="resource_failure_stickiness" value="-1"/>
-              <nvpair id="DoFencing-attr-2" name="globally_unique" value="false"/>
-            </attributes>
-          </meta_attributes>
-          <primitive id="child_DoFencing" class="stonith" type="%s">
-            <operations>
-              <op id="DoFencing-op-1" name="monitor" interval="120s" prereq="nothing" timeout="300s"/>
-              <op id="DoFencing-op-2" name="start" prereq="nothing"  timeout="180s"/>
-              <op id="DoFencing-op-3" name="stop" timeout="180s"/>
-            </operations>
-            <instance_attributes id="fencing-child">
-              <attributes>
-                <nvpair id="child_DoFencing-1" name="%s" value="%s"/>
-                <nvpair id="child_DoFencing-2" name="livedangerously" value="yes"/>
-              </attributes>
-            </instance_attributes>
-          </primitive>
-        </clone>"""
-
-    bsc_template = '''
-     <cluster_property_set id="bsc-options">
-       <attributes>
-         <nvpair id="bsc-options-ident-string" name="ident-string" value="Linux-HA TEST configuration file - REMOVEME!!"/>
-       </attributes>
-    </cluster_property_set>'''
-
-    def NewIP(self, name=None):
-        template = ''' 
-        <primitive id="%s" class="ocf" type="IPaddr" provider="heartbeat">
-          <operations>
-            <op id="mon-%s" name="monitor" interval="5s"/>
-          </operations>
-          <instance_attributes id="attrs-%s"><attributes>
-              <nvpair id="netmask-%s" name="cidr_netmask" value="32"/>
-              <nvpair id="ip-%s" name="ip" value="%s"/>
-          </attributes></instance_attributes>
-        </primitive> '''
-
-        ip = self.NextIP()
-        if not name:
-            name = "r"+ip
-
-        return template % (name, name, name, name, name, ip)
-
-    def NewHBIP(self, name=None):
-        template = ''' 
-        <primitive id="%s" class="heartbeat" type="IPaddr">
-          <operations>
-            <op id="mon-%s" name="monitor" interval="5s"/>
-          </operations>
-          <instance_attributes id="attrs-%s"><attributes>
-              <nvpair id="ip-%s" name="1" value="%s/32"/>
-          </attributes></instance_attributes>
-        </primitive> '''
-
-        ip = self.NextIP()
-        if not name:
-            name = "r"+ip
-
-        return template % (name, name, name, name, ip)
-
-    def NewDummy(self, name):
-        return self.dummy_resource_template % (name, name, name, name)
-
-    def install(self, target):
-        self.CM.rsh("localhost", "echo \'" + self.contents(target) + "\' > " + self.cib_tmpfile)
-        rc = self.CM.rsh.cp(cib_file, "root@%s:%s/cib.xml" + (target, CTSvars.CRM_CONFIG_DIR))
-        if rc != 0:
-            raise ValueError("Can not copy %s to %s (%d)"%(self.cib_tmpfile, target, rc))
-
-        self.CM.rsh(target, "chown "+CTSvars.CRM_DAEMON_USER+" "+CTSvars.CRM_CONFIG_DIR+"/cib.xml")
-        self.CM.rsh("localhost", "rm -f "+self.cib_tmpfile)
-
-    def contents(self, target=None):
-        # fencing resource
-        if self.cts_cib:
-            return self.cts_cib            
-
-        nodelist = ""
-        num_nodes = 0
-        for node in self.CM.Env["nodes"]:
-            nodelist += node + " "
-            num_nodes = num_nodes + 1
-
-        no_quorum = "stop"
-        if num_nodes < 3:
-            no_quorum = "ignore"
-            self.CM.debug("Cluster only has %d nodes, ignoring quorum" % num_nodes) 
-
-        #make up crm config
-        cib_options = self.cib_option_template % (self.CM.Env["DoFencing"], no_quorum)
-
-        #create resources and their constraints
-        resources = ""
-        constraints = ""
-
-        if self.CM.Env["DoBSC"] == 1:
-            cib_options = cib_options + self.bsc_template
-
-        if self.CM.Env["CIBResource"] != 1:
-            # generate cib
-            self.cts_cib = self.cib_template %  (cib_options, resources, constraints)
-            return self.cts_cib
-
-        if self.CM.cluster_monitor == 1:
-            resources += self.clustermon_resource_template
-            constraints += self.clustermon_location_constraint
-            
-        ip1_rsc = self.NewIP()
-        ip2_rsc = self.NewHBIP() 
-        ip3_rsc = self.NewIP() 
-        resources += self.resource_group_template % (ip1_rsc, ip2_rsc, ip3_rsc)
-
-        # lsb resource
-        resources += self.lsb_resource
-
-        # Mirgator
-        resources += self.NewDummy("migrator")
-        constraints += self.coloc_template % ("group-with-master", "group-1", "master-1", "Master", "INFINITY")
-        constraints += self.coloc_template % ("lsb-with-group", "lsb_dummy", "group-1", "Started", "INFINITY")
-
-        # per node resource
-        for node in self.CM.Env["nodes"]:
-            per_node_resources = self.NewIP("rsc_"+node)
-            per_node_constraint = self.per_node_constraint_template % (node, "rsc_"+node, node)
-                
-            resources += per_node_resources
-            constraints += per_node_constraint    
-
-        # Ping the test master
-        resources += self.pingd_resource_template % os.uname()[1]
-
-        # Require conectivity to run
-        constraints += self.pingd_constraint_template % ("master-1", "master-1", "m", "Started", "m", 1)
-
-        if self.CM.Env["DoFencing"]:
-            p_name = None
-            p_value = None
-            entries = string.split(self.CM.Env["stonith-params"], ',')
-            for entry in entries:
-                (p_name, p_value) = string.split(entry, '=')
-                if p_name == "hostlist" and p_value == "all":
-                    p_value = string.join(self.CM.Env["nodes"], " ")
-
-            stonith_resource = self.stonith_resource_template % (self.CM.Env["stonith-type"], p_name, p_value)
-            resources += stonith_resource
-        
-        #master slave resource
-        resources += self.master_slave_resource % (num_nodes, 1, 1, 1)
-
-        # generate cib
-        self.cts_cib = self.cib_template % (cib_options, resources, constraints)
-        return self.cts_cib
+        return ip.strip()
 
 
-class CIB10(CibBase):
+class CIB11(ConfigBase):
     feature_set = "3.0"
-    version = "pacemaker-1.0"
-    cib_template = '''
-<cib crm_feature_set='%s' admin_epoch='1' epoch='0' num_updates='0' validate-with='%s' %s>
-   <configuration>
-      <crm_config/>
-      <nodes/>
-      <resources/>
-      <constraints/>
-   </configuration>
-   <status/>
-</cib>'''
-
-    def _create(self, command):
-        fixed = "HOME=/root CIB_file="+self.cib_tmpfile+" crm --force configure " + command 
-        rc = self.CM.rsh(self.target, fixed)
-        if rc != 0:
-            self.CM.log("Configure call failed: "+fixed)
-            sys.exit(1)
+    version = "pacemaker-1.1"
+    counter = 1
 
     def _show(self, command=""):
         output = ""
-        (rc, result) = self.CM.rsh(self.target, "HOME=/root CIB_file="+self.cib_tmpfile+" crm configure show "+command, None, )
+        (rc, result) = self.Factory.rsh(self.Factory.target, "HOME=/root CIB_file="+self.Factory.tmpfile+" cibadmin -Ql "+command, None, )
         for line in result:
             output += line
-            self.CM.debug("Generated Config: "+line)
+            self.Factory.debug("Generated Config: "+line)
         return output
 
-    def NewIP(self, name=None, standard="ocf:heartbeat"):
-        ip = self.NextIP()
-        if not name:
-            name = "r"+ip
+    def NewIP(self, name=None, standard="ocf"):
+        if self.CM.Env["IPagent"] == "IPaddr2":
+            ip = self.NextIP()
+            if not name:
+                if ":" in ip:
+                    (prefix, sep, suffix) = ip.rpartition(":")
+                    name = "r"+suffix
+                else:
+                    name = "r"+ip
 
-        if not standard:
-            standard = ""
+            r = Resource(self.Factory, name, self.CM.Env["IPagent"], standard)
+            r["ip"] = ip
+        
+            if ":" in ip:
+                r["cidr_netmask"] = "64"
+                r["nic"] = "eth0"
+            else:
+                r["cidr_netmask"] = "32"
+
         else:
-            standard += ":"
+            if not name:
+                name = "r%s%d" % (self.CM.Env["IPagent"], self.counter)
+                self.counter = self.counter + 1
+            r = Resource(self.Factory, name, self.CM.Env["IPagent"], standard)
 
-        self._create('''primitive %s %sIPaddr params ip=%s cidr_netmask=32 op monitor interval=5s''' 
-                  % (name, standard, ip))
-        return name
+        r.add_op("monitor", "5s")
+        return r
+
+    def get_node_id(self, node_name):
+        """ Check the cluster configuration for a node ID. """
+
+        # We can't account for every possible configuration,
+        # so we only return a node ID if:
+        # * The node is specified in /etc/corosync/corosync.conf
+        #   with "ring0_addr:" equal to node_name and "nodeid:"
+        #   explicitly specified.
+        # * Or, the node is specified in /etc/cluster/cluster.conf
+        #   with name="node_name" nodeid="X"
+        # In all other cases, we return 0.
+        node_id = 0
+
+        # awkward command: use } as record separator
+        # so each corosync.conf "object" is one record;
+        # match the "node {" record that has "ring0_addr: node_name";
+        # then print the substring of that record after "nodeid:"
+        (rc, output) = self.Factory.rsh(self.Factory.target,
+            r"""awk -v RS="}" """
+            r"""'/^(\s*nodelist\s*{)?\s*node\s*{.*(ring0_addr|name):\s*%s(\s+|$)/"""
+            r"""{gsub(/.*nodeid:\s*/,"");gsub(/\s+.*$/,"");print}'"""
+            r""" /etc/corosync/corosync.conf""" % node_name, None)
+
+        if rc == 0 and len(output) == 1:
+            try:
+                node_id = int(output[0])
+            except ValueError:
+                node_id = 0
+
+        # another awkward command: use < or > as record separator
+        # so each cluster.conf XML tag is one record;
+        # match the clusternode record that has name="node_name";
+        # then print the substring of that record for nodeid="X"
+        if node_id == 0:
+            (rc, output) = self.Factory.rsh(self.Factory.target,
+                r"""awk -v RS="[<>]" """
+                r"""'/^clusternode\s+.*name="%s".*/"""
+                r"""{gsub(/.*nodeid="/,"");gsub(/".*/,"");print}'"""
+                r""" /etc/cluster/cluster.conf""" % node_name, None)
+
+            if rc == 0 and len(output) == 1:
+                try:
+                    node_id = int(output[0])
+                except ValueError:
+                    node_id = 0
+
+        return node_id
 
     def install(self, target):
-        old = self.cib_tmpfile
+        old = self.Factory.tmpfile
 
         # Force a rebuild
         self.cts_cib = None
 
-        self.cib_tmpfile = CTSvars.CRM_CONFIG_DIR+"/cib.xml"
+        self.Factory.tmpfile = CTSvars.CRM_CONFIG_DIR+"/cib.xml"
         self.contents(target)
-        self.CM.rsh(self.target, "chown "+CTSvars.CRM_DAEMON_USER+" "+self.cib_tmpfile)
+        self.Factory.rsh(self.Factory.target, "chown "+CTSvars.CRM_DAEMON_USER+" "+self.Factory.tmpfile)
 
-        self.cib_tmpfile = old
+        self.Factory.tmpfile = old
 
     def contents(self, target=None):
         # fencing resource
         if self.cts_cib:
             return self.cts_cib
-        
-        if not target:
-            self.target = self.CM.Env["nodes"][0]
-        else:
-            self.target = target
 
-        cib_base = self.cib_template % (self.feature_set, self.version, ''' remote-tls-port='9898' remote-clear-port='9999' ''')
-        self.CM.rsh(self.target, '''echo "%s" > %s''' % (cib_base, self.cib_tmpfile))
-        #self.CM.rsh.cp(self.cib_tmpfile, "root@%s:%s" % (self.target, self.cib_tmpfile))
+        if target:
+            self.Factory.target = target
 
-        nodelist = ""
-        self.num_nodes = 0
-        for node in self.CM.Env["nodes"]:
-            nodelist += node + " "
-            self.num_nodes = self.num_nodes + 1
+        self.Factory.rsh(self.Factory.target, "HOME=/root cibadmin --empty %s > %s" % (self.version, self.Factory.tmpfile))
+        #cib_base = self.cib_template % (self.feature_set, self.version, ''' remote-tls-port='9898' remote-clear-port='9999' ''')
+
+        self.num_nodes = len(self.CM.Env["nodes"])
 
         no_quorum = "stop"
         if self.num_nodes < 3:
             no_quorum = "ignore"
-            self.CM.debug("Cluster only has %d nodes, ignoring quorum" % self.num_nodes) 
+            self.Factory.log("Cluster only has %d nodes, configuring: no-quorum-policy=ignore" % self.num_nodes)
 
+        # We don't need a nodes section unless we add attributes
+        stn = None
 
-        # The shell no longer functions when the lrmd isn't running, how wonderful
-        # Start one here and let the cluster clean it up when the full stack starts
-        # Just hope target has the same location for lrmd
-        self.CM.rsh(self.target, CTSvars.CRM_DAEMON_DIR+"/lrmd", synchronous=0)
+        # Fencing resource
+        # Define first so that the shell doesn't reject every update
+        if self.CM.Env["DoFencing"]:
 
-        # Tell the shell to mind its own business, we know what we're doing
-        self.CM.rsh(self.target, "crm options check-mode relaxed")
+            # Define the "real" fencing device
+            st = Resource(self.Factory, "Fencing", ""+self.CM.Env["stonith-type"], "stonith")
 
-        # Now stop the shell from rejecting every update because we've not defined stonith resources yet
-        self._create('''property stonith-enabled=false''')
+            # Set a threshold for unreliable stonith devices such as the vmware one
+            st.add_meta("migration-threshold", "5")
+            st.add_op("monitor", "120s", timeout="120s")
+            st.add_op("stop", "0", timeout="60s")
+            st.add_op("start", "0", timeout="60s")
 
-        self._create('''property start-failure-is-fatal=false pe-input-series-max=5000''')
-        self._create('''property shutdown-escalation=5min startup-fencing=false batch-limit=10 dc-deadtime=5s''')
-        self._create('''property no-quorum-policy=%s expected-quorum-votes=%d''' % (no_quorum, self.num_nodes))
+            # For remote node tests, a cluster node is stopped and brought back up
+            # as a remote node with the name "remote_OLDNAME". To allow fencing
+            # devices to fence these nodes, create a list of all possible node names.
+            all_node_names = [ prefix+n for n in self.CM.Env["nodes"] for prefix in ('', 'remote_') ]
+
+            # Add all parameters specified by user
+            entries = string.split(self.CM.Env["stonith-params"], ',')
+            for entry in entries:
+                try:
+                    (name, value) = string.split(entry, '=', 1)
+                except ValueError:
+                    print("Warning: skipping invalid fencing parameter: %s" % entry)
+                    continue
+
+                # Allow user to specify "all" as the node list, and expand it here
+                if name in [ "hostlist", "pcmk_host_list" ] and value == "all":
+                    value = string.join(all_node_names, " ")
+
+                st[name] = value
+
+            st.commit()
+
+            # Test advanced fencing logic
+            if True:
+                stf_nodes = []
+                stt_nodes = []
+                attr_nodes = {}
+
+                # Create the levels
+                stl = FencingTopology(self.Factory)
+                for node in self.CM.Env["nodes"]:
+                    # Remote node tests will rename the node
+                    remote_node = "remote_" + node
+
+                    # Randomly assign node to a fencing method
+                    ftype = self.CM.Env.RandomGen.choice(["levels-and", "levels-or ", "broadcast "])
+
+                    # For levels-and, randomly choose targeting by node name or attribute
+                    by = ""
+                    if ftype == "levels-and":
+                        node_id = self.get_node_id(node)
+                        if node_id == 0 or self.CM.Env.RandomGen.choice([True, False]):
+                            by = " (by name)"
+                        else:
+                            attr_nodes[node] = node_id
+                            by = " (by attribute)"
+
+                    self.CM.log(" - Using %s fencing for node: %s%s" % (ftype, node, by))
+
+                    if ftype == "levels-and":
+                        # If targeting by name, add a topology level for this node
+                        if node not in attr_nodes:
+                            stl.level(1, node, "FencingPass,Fencing")
+
+                        # Always target remote nodes by name, otherwise we would need to add
+                        # an attribute to the remote node only during remote tests (we don't
+                        # want nonexistent remote nodes showing up in the non-remote tests).
+                        # That complexity is not worth the effort.
+                        stl.level(1, remote_node, "FencingPass,Fencing")
+
+                        # Add the node (and its remote equivalent) to the list of levels-and nodes.
+                        stt_nodes.extend([node, remote_node])
+
+                    elif ftype == "levels-or ":
+                        for n in [ node, remote_node ]:
+                            stl.level(1, n, "FencingFail")
+                            stl.level(2, n, "Fencing")
+                        stf_nodes.extend([node, remote_node])
+
+                # If any levels-and nodes were targeted by attribute,
+                # create the attributes and a level for the attribute.
+                if attr_nodes:
+                    stn = Nodes(self.Factory)
+                    for (node_name, node_id) in attr_nodes.items():
+                        stn.add_node(node_name, node_id, { "cts-fencing" : "levels-and" })
+                    stl.level(1, None, "FencingPass,Fencing", "cts-fencing", "levels-and")
+
+                # Create a Dummy agent that always passes for levels-and
+                if len(stt_nodes):
+                    self.CM.install_helper("fence_dummy", destdir="/usr/sbin", sourcedir=CTSvars.Fencing_home)
+                    stt = Resource(self.Factory, "FencingPass", "fence_dummy", "stonith")
+                    stt["pcmk_host_list"] = string.join(stt_nodes, " ")
+                    # Wait this many seconds before doing anything, handy for letting disks get flushed too
+                    stt["random_sleep_range"] = "30"
+                    stt["mode"] = "pass"
+                    stt.commit()
+
+                # Create a Dummy agent that always fails for levels-or
+                if len(stf_nodes):
+                    self.CM.install_helper("fence_dummy", destdir="/usr/sbin", sourcedir=CTSvars.Fencing_home)
+                    stf = Resource(self.Factory, "FencingFail", "fence_dummy", "stonith")
+                    stf["pcmk_host_list"] = string.join(stf_nodes, " ")
+                    # Wait this many seconds before doing anything, handy for letting disks get flushed too
+                    stf["random_sleep_range"] = "30"
+                    stf["mode"] = "fail"
+                    stf.commit()
+
+                # Now commit the levels themselves
+                stl.commit()
+
+        o = Option(self.Factory, "stonith-enabled", self.CM.Env["DoFencing"])
+        o["start-failure-is-fatal"] = "false"
+        o["pe-input-series-max"] = "5000"
+        o["default-action-timeout"] = "90s"
+        o["shutdown-escalation"] = "5min"
+        o["batch-limit"] = "10"
+        o["dc-deadtime"] = "5s"
+        o["no-quorum-policy"] = no_quorum
+        o["expected-quorum-votes"] = self.num_nodes
+
+        if self.Factory.rsh.exists_on_all(self.CM.Env["notification-agent"], self.CM.Env["nodes"]):
+            o["notification-agent"] = self.CM.Env["notification-agent"]
+            o["notification-recipient"] = self.CM.Env["notification-recipient"]
 
         if self.CM.Env["DoBSC"] == 1:
-            self._create('''property ident-string="Linux-HA TEST configuration file - REMOVEME!!"''')
+            o["ident-string"] = "Linux-HA TEST configuration file - REMOVEME!!"
+
+        o.commit()
+
+        # Commit the nodes section if we defined one
+        if stn is not None:
+            stn.commit()
 
         # Add resources?
         if self.CM.Env["CIBResource"] == 1:
             self.add_resources()
 
-        # Fencing resource
-        if self.CM.Env["DoFencing"]:
-            params = None
-            entries = string.split(self.CM.Env["stonith-params"], ',')
-            for entry in entries:
-                (name, value) = string.split(entry, '=')
-                if name == "hostlist" and value == "all":
-                    value = string.join(self.CM.Env["nodes"], " ")
-
-                if params:
-                    params = ("""%s '%s="%s"' """ % (params, name, value))
-                else:
-                    params = ("""'%s="%s"' """ % (name, value))
-
-            if params:
-                params = "params %s" % params
-            else:
-                params = ""
-
-            self._create('''primitive FencingChild stonith::%s %s op monitor interval=120s timeout=300 op start interval=0 timeout=180s op stop interval=0 timeout=180s''' % (self.CM.Env["stonith-type"], params))
-            # Set a threshold for unreliable stonith devices such as the vmware one
-            self._create('''clone Fencing FencingChild meta globally-unique=false migration-threshold=5''')
-        
         if self.CM.cluster_monitor == 1:
-            self._create('''primitive cluster_mon ocf:pacemaker:ClusterMon params update=10 extra_options="-r -n" user=abeekhof htmlfile=/suse/abeekhof/Export/cluster.html op start interval=0 requires=nothing op monitor interval=5s requires=nothing''')
-            self._create('''location prefer-dc cluster_mon rule -INFINITY: \#is_dc eq false''')
+            mon = Resource(self.Factory, "cluster_mon", "ocf", "ClusterMon", "pacemaker")
+            mon.add_op("start", "0", requires="nothing")
+            mon.add_op("monitor", "5s", requires="nothing")
+            mon["update"] = "10"
+            mon["extra_options"] = "-r -n"
+            mon["user"] = "abeekhof"
+            mon["htmlfile"] = "/suse/abeekhof/Export/cluster.html"
+            mon.commit()
 
-        self._create('''property stonith-enabled=%s''' % (self.CM.Env["DoFencing"]))
-            
+            #self._create('''location prefer-dc cluster_mon rule -INFINITY: \#is_dc eq false''')
+
         # generate cib
-        self.cts_cib = self._show("xml")
+        self.cts_cib = self._show()
 
-        if self.cib_tmpfile != CTSvars.CRM_CONFIG_DIR+"/cib.xml":
-            self.CM.rsh(self.target, "rm -f "+self.cib_tmpfile)
+        if self.Factory.tmpfile != CTSvars.CRM_CONFIG_DIR+"/cib.xml":
+            self.Factory.rsh(self.Factory.target, "rm -f "+self.Factory.tmpfile)
 
         return self.cts_cib
 
     def add_resources(self):
-        # Group Resource
-        r1 = self.NewIP()
-        ip = self.NextIP()
-        r2 = "r"+ip
-        self._create('''primitive %s heartbeat::IPaddr params 1=%s/32 op monitor interval=5s''' % (r2, ip))
-        r3 = self.NewIP()
-        self._create('''group group-1 %s %s %s''' % (r1, r2, r3))
-
         # Per-node resources
         for node in self.CM.Env["nodes"]:
-            r = self.NewIP("rsc_"+node)
-            self._create('''location prefer-%s %s rule 100: \#uname eq %s''' % (node, r, node))
-                
-        # LSB resource
-        lsb_agent = self.CM.install_helper("LSBDummy")
-    
-        self._create('''primitive lsb-dummy lsb::''' +lsb_agent+ ''' op monitor interval=5s''')
-        self._create('''colocation lsb-with-group INFINITY: lsb-dummy group-1''')
-        self._create('''order lsb-after-group mandatory: group-1 lsb-dummy symmetrical=true''')
+            name = "rsc_"+node
+            r = self.NewIP(name)
+            r.prefer(node, "100")
+            r.commit()
 
         # Migrator
-        self._create('''primitive migrator ocf:pacemaker:Dummy meta allow-migrate=1 op monitor interval=P10S''')
+        # Make this slightly sticky (since we have no other location constraints) to avoid relocation during Reattach
+        m = Resource(self.Factory, "migrator","Dummy",  "ocf", "pacemaker")
+        m["passwd"] = "whatever"
+        m.add_meta("resource-stickiness","1")
+        m.add_meta("allow-migrate", "1")
+        m.add_op("monitor", "P10S")
+        m.commit()
 
         # Ping the test master
-        self._create('''primitive ping-1 ocf:pacemaker:ping params host_list=%s name=connected debug=true op monitor interval=120s''' % os.uname()[1])
-        self._create('''clone Connectivity ping-1 meta globally-unique=false''')
+        p = Resource(self.Factory, "ping-1","ping",  "ocf", "pacemaker")
+        p.add_op("monitor", "60s")
+        p["host_list"] = self.CM.Env["cts-master"]
+        p["name"] = "connected"
+        p["debug"] = "true"
+
+        c = Clone(self.Factory, "Connectivity", p)
+        c["globally-unique"] = "false"
+        c.commit()
 
         #master slave resource
-        self._create('''primitive stateful-1 ocf:pacemaker:Stateful op monitor interval=15s op monitor interval=16s role=Master''')
-        self._create('''ms master-1 stateful-1 meta clone-max=%d clone-node-max=%d master-max=%d master-node-max=%d'''
-                     % (self.num_nodes, 1, 1, 1))
+        s = Resource(self.Factory, "stateful-1", "Stateful", "ocf", "pacemaker")
+        s.add_op("monitor", "15s", timeout="60s")
+        s.add_op("monitor", "16s", timeout="60s", role="Master")
+        ms = Master(self.Factory, "master-1", s)
+        ms["clone-max"] = self.num_nodes
+        ms["master-max"] = 1
+        ms["clone-node-max"] = 1
+        ms["master-node-max"] = 1
 
         # Require conectivity to run the master
-        self._create('''location %s-is-connected %s rule -INFINITY: connected lt %d or not_defined connected''' % ("m1", "master-1", 1))
+        r = Rule(self.Factory, "connected", "-INFINITY", op="or")
+        r.add_child(Expression(self.Factory, "m1-connected-1", "connected", "lt", "1"))
+        r.add_child(Expression(self.Factory, "m1-connected-2", "connected", "not_defined", None))
+        ms.prefer("connected", rule=r)
+
+        ms.commit()
+
+        # Group Resource
+        g = Group(self.Factory, "group-1")
+        g.add_child(self.NewIP())
+
+        if self.CM.Env["have_systemd"]:
+            # It would be better to put the python in a separate file, so we
+            # could loop "while True" rather than sleep for 24 hours. We can't
+            # put a loop in a single-line python command; only simple commands
+            # may be separated by semicolon in python.
+            dummy_service_file = """
+[Unit]
+Description=Dummy resource that takes a while to start
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/python -c 'import time, systemd.daemon; time.sleep(10); systemd.daemon.notify("READY=1"); time.sleep(86400)'
+ExecStop=/bin/sleep 10
+ExecStop=/bin/kill -s KILL \$MAINPID
+"""
+
+            os.system("cat <<-END >/tmp/DummySD.service\n%s\nEND" % (dummy_service_file))
+
+            self.CM.install_helper("DummySD.service", destdir="/usr/lib/systemd/system/", sourcedir="/tmp")
+            sysd = Resource(self.Factory, "petulant", "DummySD",  "service")
+            sysd.add_op("monitor", "P10S")
+            g.add_child(sysd)
+        else:
+            g.add_child(self.NewIP())
+
+        g.add_child(self.NewIP())
 
         # Group with the master
-        self._create('''colocation group-with-master INFINITY: group-1 master-1:Master''')
-        self._create('''order group-after-master mandatory: master-1:promote group-1:start symmetrical=true''')
+        g.after("master-1", first="promote", then="start")
+        g.colocate("master-1", "INFINITY", withrole="Master")
 
-class HASI(CIB10):
-    def add_resources(self):
-        # DLM resource
-        self._create('''primitive dlm ocf:pacemaker:controld op monitor interval=120s''')
-        self._create('''clone dlm-clone dlm meta globally-unique=false interleave=true''')
+        g.commit()
+
+        # LSB resource
+        lsb_agent = self.CM.install_helper("LSBDummy")
+
+        lsb = Resource(self.Factory, "lsb-dummy",lsb_agent,  "lsb")
+        lsb.add_op("monitor", "5s")
+
+        # LSB with group
+        lsb.after("group-1")
+        lsb.colocate("group-1")
+
+        lsb.commit()
+
+
+class CIB12(CIB11):
+    feature_set = "3.0"
+    version = "pacemaker-1.2"
+
+class CIB20(CIB11):
+    feature_set = "3.0"
+    version = "pacemaker-2.4"
+
+#class HASI(CIB10):
+#    def add_resources(self):
+#        # DLM resource
+#        self._create('''primitive dlm ocf:pacemaker:controld op monitor interval=120s''')
+#        self._create('''clone dlm-clone dlm meta globally-unique=false interleave=true''')
 
         # O2CB resource
-        self._create('''primitive o2cb ocf:ocfs2:o2cb op monitor interval=120s''')
-        self._create('''clone o2cb-clone o2cb meta globally-unique=false interleave=true''')
-        self._create('''colocation o2cb-with-dlm INFINITY: o2cb-clone dlm-clone''')
-        self._create('''order start-o2cb-after-dlm mandatory: dlm-clone o2cb-clone''')
+#        self._create('''primitive o2cb ocf:ocfs2:o2cb op monitor interval=120s''')
+#        self._create('''clone o2cb-clone o2cb meta globally-unique=false interleave=true''')
+#        self._create('''colocation o2cb-with-dlm INFINITY: o2cb-clone dlm-clone''')
+#        self._create('''order start-o2cb-after-dlm mandatory: dlm-clone o2cb-clone''')
 
-class ConfigFactory:      
+
+class ConfigFactory:
     def __init__(self, CM):
         self.CM = CM
-        self.register("pacemaker06", CIB06, CM)
-        self.register("pacemaker10", CIB10, CM)
-        self.register("hae", HASI, CM)
+        self.rsh = self.CM.rsh
+        self.register("pacemaker11", CIB11, CM, self)
+        self.register("pacemaker12", CIB12, CM, self)
+        self.register("pacemaker20", CIB20, CM, self)
+#        self.register("hae", HASI, CM, self)
+        self.target = self.CM.Env["nodes"][0]
+        self.tmpfile = None
 
+    def log(self, args):
+        self.CM.log("cib: %s" % args)
+
+    def debug(self, args):
+        self.CM.debug("cib: %s" % args)
 
     def register(self, methodName, constructor, *args, **kargs):
         """register a constructor"""
         _args = [constructor]
         _args.extend(args)
-        setattr(self, methodName, apply(ConfigFactoryItem,_args, kargs))
-        
+        setattr(self, methodName, ConfigFactoryItem(*_args, **kargs))
+
     def unregister(self, methodName):
         """unregister a constructor"""
         delattr(self, methodName)
 
     def createConfig(self, name="pacemaker-1.0"):
-        if name == "pacemaker-0.6":
-            name = "pacemaker06";
-        elif name == "pacemaker-1.0":
+        if name == "pacemaker-1.0":
             name = "pacemaker10";
+        elif name == "pacemaker-1.1":
+            name = "pacemaker11";
+        elif name == "pacemaker-1.2":
+            name = "pacemaker12";
+        elif name == "pacemaker-2.0":
+            name = "pacemaker20";
         elif name == "hasi":
             name = "hae";
 
@@ -540,22 +510,45 @@ class ConfigFactory:
         else:
             self.CM.log("Configuration variant '%s' is unknown.  Defaulting to latest config" % name)
 
-        return self.pacemaker10()
+        return self.pacemaker12()
+
 
 class ConfigFactoryItem:
     def __init__(self, function, *args, **kargs):
-        assert callable(function), "function should be a callable obj"
         self._function = function
         self._args = args
         self._kargs = kargs
-        
+
     def __call__(self, *args, **kargs):
         """call function"""
         _args = list(self._args)
         _args.extend(args)
         _kargs = self._kargs.copy()
         _kargs.update(kargs)
-        return apply(self._function,_args,_kargs)
+        return self._function(*_args,**_kargs)
 
+if __name__ == '__main__':
+    """ Unit test (pass cluster node names as command line arguments) """
 
-#CibFactory = ConfigFactory()
+    import CTS
+    import CM_ais
+    import sys
+
+    if len(sys.argv) < 2:
+        print("Usage: %s <node> ..." % sys.argv[0])
+        sys.exit(1)
+
+    args = [
+        "--nodes", " ".join(sys.argv[1:]),
+        "--clobber-cib",
+        "--populate-resources",
+        "--stack", "corosync",
+        "--test-ip-base", "fe80::1234:56:7890:1000",
+        "--stonith", "rhcs",
+        "--stonith-args", "pcmk_arg_map=domain:uname"
+    ]
+    env = CTS.CtsLab(args)
+    cm = CM_ais.crm_mcp(env)
+    CibFactory = ConfigFactory(cm)
+    cib = CibFactory.createConfig("pacemaker-1.1")
+    print(cib.contents())

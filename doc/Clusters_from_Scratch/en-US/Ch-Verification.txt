@@ -1,0 +1,153 @@
+= Start and Verify Cluster =
+
+== Start the Cluster ==
+
+Now that corosync is configured, it is time to start the cluster.
+The command below will start corosync and pacemaker on both nodes
+in the cluster.  If you are issuing the start command from a different
+node than the one you ran the `pcs cluster auth` command on earlier, you
+must authenticate on the current node you are logged into before you will
+be allowed to start the cluster.
+
+----
+[root@pcmk-1 ~]# pcs cluster start --all
+pcmk-1: Starting Cluster...
+pcmk-2: Starting Cluster...
+----
+
+[NOTE]
+======
+An alternative to using the `pcs cluster start --all` command
+is to issue either of the below command sequences on each node in the
+cluster separately:
+
+----
+# pcs cluster start
+Starting Cluster...
+----
+
+or
+
+----
+# systemctl start corosync.service
+# systemctl start pacemaker.service
+----
+======
+
+[IMPORTANT]
+====
+In this example, we are not enabling the corosync and pacemaker services
+to start at boot. If a cluster node fails or is rebooted, you will need to run
++pcs cluster start pass:[<replaceable>nodename</replaceable>]+ (or `--all`) to start the cluster on it.
+While you could enable the services to start at boot, requiring a manual
+start of cluster services gives you the opportunity to do a post-mortem investigation
+of a node failure before returning it to the cluster.
+====
+
+== Verify Corosync Installation ==
+
+First, use `corosync-cfgtool` to check whether cluster communication is happy:
+
+----
+[root@pcmk-1 ~]# corosync-cfgtool -s
+Printing ring status.
+Local node ID 1
+RING ID 0
+	id	= 192.168.122.101
+	status	= ring 0 active with no faults
+----
+
+We can see here that everything appears normal with our fixed IP
+address (not a 127.0.0.x loopback address) listed as the *id*, and *no
+faults* for the status.
+
+If you see something different, you might want to start by checking
+the node's network, firewall and selinux configurations.
+
+Next, check the membership and quorum APIs:
+
+----
+[root@pcmk-1 ~]# corosync-cmapctl  | grep members 
+runtime.totem.pg.mrp.srp.members.1.config_version (u64) = 0
+runtime.totem.pg.mrp.srp.members.1.ip (str) = r(0) ip(192.168.122.101) 
+runtime.totem.pg.mrp.srp.members.1.join_count (u32) = 1
+runtime.totem.pg.mrp.srp.members.1.status (str) = joined
+runtime.totem.pg.mrp.srp.members.2.config_version (u64) = 0
+runtime.totem.pg.mrp.srp.members.2.ip (str) = r(0) ip(192.168.122.102) 
+runtime.totem.pg.mrp.srp.members.2.join_count (u32) = 2
+runtime.totem.pg.mrp.srp.members.2.status (str) = joined
+
+[root@pcmk-1 ~]# pcs status corosync 
+Membership information
+ --------------------------
+    Nodeid      Votes Name
+         1          1 pcmk-1 (local)
+         2          1 pcmk-2
+----
+
+You should see both nodes have joined the cluster.
+
+== Verify Pacemaker Installation ==
+
+Now that we have confirmed that Corosync is functional, we can check
+the rest of the stack. Pacemaker has already been started, so verify
+the necessary processes are running:
+
+----
+[root@pcmk-1 ~]# ps axf
+  PID TTY      STAT   TIME COMMAND
+    2 ?        S      0:00 [kthreadd]
+...lots of processes...
+ 1362 ?        Ssl    0:35 corosync
+ 1379 ?        Ss     0:00 /usr/sbin/pacemakerd -f
+ 1380 ?        Ss     0:00  \_ /usr/libexec/pacemaker/cib
+ 1381 ?        Ss     0:00  \_ /usr/libexec/pacemaker/stonithd
+ 1382 ?        Ss     0:00  \_ /usr/libexec/pacemaker/lrmd
+ 1383 ?        Ss     0:00  \_ /usr/libexec/pacemaker/attrd
+ 1384 ?        Ss     0:00  \_ /usr/libexec/pacemaker/pengine
+ 1385 ?        Ss     0:00  \_ /usr/libexec/pacemaker/crmd
+----
+
+If that looks OK, check the `pcs status` output:
+
+----
+[root@pcmk-1 ~]# pcs status
+Cluster name: mycluster
+WARNING: no stonith devices and stonith-enabled is not false
+Last updated: Tue Dec 16 16:15:29 2014
+Last change: Tue Dec 16 15:49:47 2014
+Stack: corosync
+Current DC: pcmk-2 (2) - partition with quorum
+Version: 1.1.12-a14efad
+2 Nodes configured
+0 Resources configured
+
+
+Online: [ pcmk-1 pcmk-2 ]
+
+Full list of resources:
+
+
+PCSD Status:
+  pcmk-1: Online
+  pcmk-2: Online
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+----
+
+Finally, ensure there are no startup errors (aside from messages relating
+to not having STONITH configured, which are OK at this point):
+----
+[root@pcmk-1 ~]# journalctl | grep -i error
+----
+
+[NOTE]
+======
+Other operating systems may report startup errors in other locations,
+for example +/var/log/messages+.
+======
+
+Repeat these checks on the other node. The results should be the same.

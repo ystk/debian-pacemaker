@@ -1,7 +1,7 @@
 '''CTS: Cluster Testing System: LinuxHA v2 dependent modules...
 '''
 
-__copyright__='''
+__copyright__ = '''
 Author: Huang Zhen <zhenhltc@cn.ibm.com>
 Copyright (C) 2004 International Business Machines
 
@@ -23,14 +23,14 @@ Additional Audits, Revised Start action, Default Configuration:
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
 
-import os, sys, warnings
-import CTS
-from CTSvars  import *
-from CTS      import *
-from CIB      import *
-from CTStests import AuditResource
+import sys
+from cts.CTSvars  import *
+from cts.CTS      import *
+from cts.CIB      import *
+from cts.CTStests import AuditResource
+from cts.watcher  import LogWatcher
 
 try:
     from xml.dom.minidom import *
@@ -53,9 +53,13 @@ class crm_lha(ClusterManager):
     It implements the things we need to talk to and manipulate
     linux-ha version 2 clusters
     '''
-    def __init__(self, Environment, randseed=None):
+    def __init__(self, Environment, randseed=None, name=None):
         ClusterManager.__init__(self, Environment, randseed=randseed)
         #HeartbeatCM.__init__(self, Environment, randseed=randseed)
+
+        #if not name: name="crm-lha"
+        #self["Name"] = name
+        #self.name = name
 
         self.fastfail = 0
         self.clear_cache = 0
@@ -64,89 +68,9 @@ class crm_lha(ClusterManager):
         self.cluster_monitor = 0
         self.use_short_names = 1
 
-        self.update({
-            "Name"           : "crm-lha",
-            "DeadTime"       : 300,
-            "StartTime"      : 300,        # Max time to start up
-            "StableTime"     : 30,
-            "StartCmd"       : CTSvars.INITDIR+"/heartbeat start > /dev/null 2>&1",
-            "StopCmd"        : CTSvars.INITDIR+"/heartbeat stop  > /dev/null 2>&1",
-            "ElectionCmd"    : "crmadmin -E %s",
-            "StatusCmd"      : "crmadmin -t 60000 -S %s 2>/dev/null",
-            "EpocheCmd"      : "crm_node -H -e",
-            "QuorumCmd"      : "crm_node -H -q",
-            "ParitionCmd"    : "crm_node -H -p",
-            "CibQuery"       : "cibadmin -Ql",
-            "ExecuteRscOp"   : "lrmadmin -n %s -E %s %s 0 %d EVERYTIME 2>&1",
-            "CIBfile"        : "%s:"+CTSvars.CRM_CONFIG_DIR+"/cib.xml",
-            "TmpDir"         : "/tmp",
-
-            "BreakCommCmd"   : "iptables -A INPUT -s %s -j DROP >/dev/null 2>&1",
-            "FixCommCmd"     : "iptables -D INPUT -s %s -j DROP >/dev/null 2>&1",
-
-# tc qdisc add dev lo root handle 1: cbq avpkt 1000 bandwidth 1000mbit
-# tc class add dev lo parent 1: classid 1:1 cbq rate "$RATE"kbps allot 17000 prio 5 bounded isolated
-# tc filter add dev lo parent 1: protocol ip prio 16 u32 match ip dst 127.0.0.1 match ip sport $PORT 0xFFFF flowid 1:1
-# tc qdisc add dev lo parent 1: netem delay "$LATENCY"msec "$(($LATENCY/4))"msec 10% 2> /dev/null > /dev/null
-            "ReduceCommCmd"  : "",
-            "RestoreCommCmd" : "tc qdisc del dev lo root",
-
-            "LogFileName"    : Environment["LogFileName"],
-
-            "UUIDQueryCmd"    : "crmadmin -N",
-            "StandbyCmd"      : "crm_standby -U %s -v %s 2>/dev/null",
-            "StandbyQueryCmd" : "crm_standby -GQ -U %s 2>/dev/null",
-
-            # Patterns to look for in the log files for various occasions...
-            "Pat:DC_IDLE"      : "crmd.*State transition.*-> S_IDLE",
-            
-            # This wont work if we have multiple partitions
-            "Pat:Local_started" : "%s crmd:.*The local CRM is operational",
-            "Pat:Slave_started" : "%s crmd:.*State transition.*-> S_NOT_DC",
-            "Pat:Master_started"   : "%s crmd:.* State transition.*-> S_IDLE",
-            "Pat:We_stopped"   : "heartbeat.*%s.*Heartbeat shutdown complete",
-            "Pat:Logd_stopped" : "%s logd:.*Exiting write process",
-            "Pat:They_stopped" : "%s crmd:.*LOST:.* %s ",
-            "Pat:They_dead"    : "node %s.*: is dead",
-            "Pat:TransitionComplete" : "Transition status: Complete: complete",
-
-            "Pat:ChildKilled"  : "%s heartbeat.*%s.*killed by signal 9",
-            "Pat:ChildRespawn" : "%s heartbeat.*Respawning client.*%s",
-            "Pat:ChildExit"    : "ERROR: Client .* exited with return code",
-            
-            # Bad news Regexes.  Should never occur.
-            "BadRegexes"   : (
-                r"ERROR:",
-                r"CRIT:",
-                r"Shutting down\.",
-                r"Forcing shutdown\.",
-                r"Timer I_TERMINATE just popped",
-                r"input=I_ERROR",
-                r"input=I_FAIL",
-                r"input=I_INTEGRATED cause=C_TIMER_POPPED",
-                r"input=I_FINALIZED cause=C_TIMER_POPPED",
-                r"input=I_ERROR",
-                r", exiting\.",
-                r"WARN.*Ignoring HA message.*vote.*not in our membership list",
-                r"pengine.*Attempting recovery of resource",
-                r"is taking more than 2x its timeout",
-                r"Confirm not received from",
-                r"Welcome reply not received from",
-                r"Attempting to schedule .* after a stop",
-                r"Resource .* was active at shutdown",
-                r"duplicate entries for call_id",
-                r"Search terminated:",
-                r"No need to invoke the TE",
-                r"global_timer_callback:",
-                r"Faking parameter digest creation",
-                r"Parameters to .* action changed:",
-                r"Parameters to .* changed",
-            ),
-        })
-
         if self.Env["DoBSC"]:
-            del self["Pat:They_stopped"]
-            del self["Pat:Logd_stopped"]
+            del self.templates["Pat:They_stopped"]
+            del self.templates["Pat:Logd_stopped"]
             self.Env["use_logd"] = 0
 
         self._finalConditions()
@@ -161,22 +85,14 @@ class crm_lha(ClusterManager):
         # At some point implement a more elegant solution that 
         #   also produces a report at the end
         '''Return list of errors which are known and very noisey should be ignored'''
-        if 1:
-            return [ 
-                "ERROR: crm_abort: crm_glib_handler: ",
-                "ERROR: Message hist queue is filling up",
-                "stonithd: .*CRIT: external_hostlist: 'vmware gethosts' returned an empty hostlist",
-                "stonithd: .*ERROR: Could not list nodes for stonith RA external/vmware.",
-                "pengine: Preventing .* from re-starting",
-                ]
-        return []
+        return PatternSelector().get_patterns(self.name, "BadNewsIgnore")
 
     def install_config(self, node):
         if not self.ns.WaitForNodeToComeUp(node):
             self.log("Node %s is not up." % node)
             return None
 
-        if not self.CIBsync.has_key(node) and self.Env["ClobberCIB"] == 1:
+        if not node in self.CIBsync and self.Env["ClobberCIB"] == 1:
             self.CIBsync[node] = 1
             self.rsh(node, "rm -f "+CTSvars.CRM_CONFIG_DIR+"/cib*")
 
@@ -186,12 +102,12 @@ class crm_lha(ClusterManager):
 
             self.cib_installed = 1
             if self.Env["CIBfilename"] == None:
-                self.debug("Installing Generated CIB on node %s" %(node))
+                self.log("Installing Generated CIB on node %s" % (node))
                 self.cib.install(node)
 
             else:
-                self.log("Installing CIB (%s) on node %s" %(self.Env["CIBfilename"], node))
-                if 0 != self.rsh.cp(self.Env["CIBfilename"], "root@" + (self["CIBfile"]%node)):
+                self.log("Installing CIB (%s) on node %s" % (self.Env["CIBfilename"], node))
+                if 0 != self.rsh.cp(self.Env["CIBfilename"], "root@" + (self.templates["CIBfile"] % node)):
                     raise ValueError("Can not scp file to %s %d"%(node))
         
             self.rsh(node, "chown "+CTSvars.CRM_DAEMON_USER+" "+CTSvars.CRM_CONFIG_DIR+"/cib.xml")
@@ -210,28 +126,28 @@ class crm_lha(ClusterManager):
 
         watchpats = [ ]
         watchpats.append("Current ping state: (S_IDLE|S_NOT_DC)")
-        watchpats.append(self["Pat:Slave_started"]%node)
-        watchpats.append(self["Pat:Master_started"]%node)
-        idle_watch = CTS.LogWatcher(self.Env, self["LogFileName"], watchpats, "ClusterIdle")
+        watchpats.append(self.templates["Pat:Slave_started"]%node)
+        watchpats.append(self.templates["Pat:Master_started"]%node)
+        idle_watch = LogWatcher(self.Env["LogFileName"], watchpats, "ClusterIdle", hosts=[node], kind=self.Env["LogWatcher"])
         idle_watch.setwatch()
 
-        out = self.rsh(node, self["StatusCmd"]%node, 1)
+        out = self.rsh(node, self.templates["StatusCmd"]%node, 1)
         self.debug("Node %s status: '%s'" %(node, out))            
 
         if not out or string.find(out, 'ok') < 0:
             if self.ShouldBeStatus[node] == "up":
                 self.log(
                     "Node status for %s is %s but we think it should be %s"
-                    %(node, "down", self.ShouldBeStatus[node]))
-            self.ShouldBeStatus[node]="down"
+                    % (node, "down", self.ShouldBeStatus[node]))
+            self.ShouldBeStatus[node] = "down"
             return 0
 
         if self.ShouldBeStatus[node] == "down":
             self.log(
                 "Node status for %s is %s but we think it should be %s: %s"
-                %(node, "up", self.ShouldBeStatus[node], out))
+                % (node, "up", self.ShouldBeStatus[node], out))
 
-        self.ShouldBeStatus[node]="up"
+        self.ShouldBeStatus[node] = "up"
 
         # check the output first - because syslog-ng looses messages
         if string.find(out, 'S_NOT_DC') != -1:
@@ -244,7 +160,7 @@ class crm_lha(ClusterManager):
         # fall back to syslog-ng and wait
         if not idle_watch.look():
             # just up
-            self.debug("Warn: Node %s is unstable: %s" %(node, out))
+            self.debug("Warn: Node %s is unstable: %s" % (node, out))
             return 1
 
         # Up and stable
@@ -264,36 +180,33 @@ class crm_lha(ClusterManager):
 
         if self.test_node_CM(node) == 2:
             return 1
-        self.log("Warn: Node %s not stable" %(node)) 
+        self.log("Warn: Node %s not stable" % (node)) 
         return None
 
     def partition_stable(self, nodes, timeout=None):
         watchpats = [ ]
         watchpats.append("Current ping state: S_IDLE")
-        watchpats.append(self["Pat:DC_IDLE"])
+        watchpats.append(self.templates["Pat:DC_IDLE"])
         self.debug("Waiting for cluster stability...") 
 
         if timeout == None:
-            timeout = self["DeadTime"]
+            timeout = self.Env["DeadTime"]
 
-        idle_watch = CTS.LogWatcher(self.Env, self["LogFileName"], watchpats, "ClusterStable", timeout)
-        idle_watch.setwatch()
-
-        any_up = 0
-        for node in self.Env["nodes"]:
-            # have each node dump its current state
-            if self.ShouldBeStatus[node] == "up":
-                self.rsh(node, self["StatusCmd"] %node, 1)
-                any_up = 1
-
-        if any_up == 0:
+        if len(nodes) < 3:
             self.debug("Cluster is inactive") 
             return 1
+
+        idle_watch = LogWatcher(self.Env["LogFileName"], watchpats, "ClusterStable", timeout, hosts=nodes.split(), kind=self.Env["LogWatcher"])
+        idle_watch.setwatch()
+
+        for node in nodes.split():
+            # have each node dump its current state
+            self.rsh(node, self.templates["StatusCmd"] % node, 1)
 
         ret = idle_watch.look()
         while ret:
             self.debug(ret) 
-            for node in nodes:
+            for node in nodes.split():
                 if re.search(node, ret):
                     return 1
             ret = idle_watch.look()
@@ -323,7 +236,7 @@ class crm_lha(ClusterManager):
         rc = 0
 
         if not status_line: 
-            status_line = self.rsh(node, self["StatusCmd"]%node, 1)
+            status_line = self.rsh(node, self.templates["StatusCmd"]%node, 1)
 
         if not status_line:
             rc = 0
@@ -353,48 +266,20 @@ class crm_lha(ClusterManager):
                     resources.append(tmp.id)
         return resources
 
-    def ResourceOp(self, resource, op, node, interval=0, app="lrmadmin"):
-        '''
-        Execute an operation on a resource
-        '''
-        cmd = self["ExecuteRscOp"] % (app, resource, op, interval)
-        (rc, lines) = self.rsh(node, cmd, None)
-
-        if rc == 127:
-            self.log("Command '%s' failed. Binary not installed?" % cmd)
-            for line in lines:
-                self.log("Output: "+line)
-
-        return rc
-
     def ResourceLocation(self, rid):
         ResourceNodes = []
         for node in self.Env["nodes"]:
             if self.ShouldBeStatus[node] == "up":
-                dummy = 0
-                rc = self.ResourceOp(rid, "monitor", node)
-                # Strange error codes from remote_py
-                # 65024 == not installed
-                # 2048 == 8
-                # 1792 == 7
-                # 0    == 0
+
+                cmd = self.templates["RscRunning"] % (rid)
+                (rc, lines) = self.rsh(node, cmd, None)
+
                 if rc == 127:
-                    dummy = 1
-
-                elif rc == 254 or rc == 65024:
-                    dummy = 1
-                    #self.debug("%s is not installed on %s: %d" % (rid, node, rc))
-
-                elif rc == 0 or rc == 2048 or rc == 8:
+                    self.log("Command '%s' failed. Binary or pacemaker-cts package not installed?" % cmd)
+                    for line in lines:
+                        self.log("Output: "+line)
+                elif rc == 0:
                     ResourceNodes.append(node)
-
-                elif rc == 7 or rc == 1792:
-                    dummy = 1
-                    #self.debug("%s is not running on %s: %d" % (rid, node, rc))
-
-                else:
-                    # not active on this node?
-                    self.log("Unknown rc code for %s on %s: %d" % (rid, node, rc))
 
         return ResourceNodes
 
@@ -403,27 +288,31 @@ class crm_lha(ClusterManager):
 
         for node in self.Env["nodes"]:
             if self.ShouldBeStatus[node] == "up":
-                partition = self.rsh(node, self["ParitionCmd"], 1)
+                partition = self.rsh(node, self.templates["PartitionCmd"], 1)
 
                 if not partition:
-                    self.log("no partition details for %s" %node)
+                    self.log("no partition details for %s" % node)
                 elif len(partition) > 2:
-                    partition = partition[:-1]
-                    found=0
+                    nodes = partition.split()
+                    nodes.sort()
+                    partition = string.join(nodes, ' ')
+
+                    found = 0
                     for a_partition in ccm_partitions:
                         if partition == a_partition:
                             found = 1
                     if found == 0:
-                        self.debug("Adding partition from %s: %s" %(node, partition))
+                        self.debug("Adding partition from %s: %s" % (node, partition))
                         ccm_partitions.append(partition)
                     else:
-                        self.debug("Partition '%s' from %s is consistent with existing entries" %(partition, node))
+                        self.debug("Partition '%s' from %s is consistent with existing entries" % (partition, node))
 
                 else:
-                    self.log("bad partition details for %s" %node)
+                    self.log("bad partition details for %s" % node)
             else:
-                self.debug("Node %s is down... skipping" %node)
+                self.debug("Node %s is down... skipping" % node)
 
+        self.debug("Found partitions: %s" % repr(ccm_partitions) )
         return ccm_partitions
 
     def HasQuorum(self, node_list):
@@ -436,48 +325,45 @@ class crm_lha(ClusterManager):
 
         for node in node_list:
             if self.ShouldBeStatus[node] == "up":
-                quorum = self.rsh(node, self["QuorumCmd"], 1)
+                quorum = self.rsh(node, self.templates["QuorumCmd"], 1)
                 if string.find(quorum, "1") != -1:
                     return 1
                 elif string.find(quorum, "0") != -1:
                     return 0
                 else:
-                    self.log("WARN: Unexpected quorum test result from "+ node +":"+ quorum)
+                    self.debug("WARN: Unexpected quorum test result from " + node + ":" + quorum)
 
         return 0
     def Components(self):    
         complist = []
         common_ignore = [
                     "Pending action:",
-                    "ERROR: crm_log_message_adv:",
-                    "ERROR: MSG: No message to dump",
+                    "(ERROR|error): crm_log_message_adv:",
+                    "(ERROR|error): MSG: No message to dump",
                     "pending LRM operations at shutdown",
                     "Lost connection to the CIB service",
                     "Connection to the CIB terminated...",
                     "Sending message to CIB service FAILED",
-                    "crmd: .*Action A_RECOVER .* not supported",
-                    "ERROR: stonithd_op_result_ready: not signed on",
-                    "pingd: .*ERROR: send_update: Could not send update",
+                    "Action A_RECOVER .* not supported",
+                    "(ERROR|error): stonithd_op_result_ready: not signed on",
+                    "pingd.*(ERROR|error): send_update: Could not send update",
                     "send_ipc_message: IPC Channel to .* is not connected",
                     "unconfirmed_actions: Waiting on .* unconfirmed actions",
                     "cib_native_msgready: Message pending on command channel",
-                    "crmd:.*do_exit: Performing A_EXIT_1 - forcefully exiting the CRMd",
-                    "verify_stopped: Resource .* was active at shutdown.  You may ignore this error if it is unmanaged.",
+                    r": Performing A_EXIT_1 - forcefully exiting the CRMd",
+                    r"Resource .* was active at shutdown.  You may ignore this error if it is unmanaged.",
             ]
 
         stonith_ignore = [
-            "ERROR: stonithd_signon: ",
-            "update_failcount: Updating failcount for child_DoFencing",
-            "ERROR: te_connect_stonith: Sign-in failed: triggered a retry",
-            "lrmd: .*ERROR: cl_get_value: wrong argument (reply)",
-            "lrmd: .*ERROR: is_expected_msg:.* null message",
-            "lrmd: .*ERROR: stonithd_receive_ops_result failed.",
+            r"Updating failcount for child_DoFencing",
+            r"(ERROR|error).*: Sign-in failed: triggered a retry",
+            "lrmd.*(ERROR|error): stonithd_receive_ops_result failed.",
              ]
 
         stonith_ignore.extend(common_ignore)
 
         ccm_ignore = [
-            "ERROR: get_channel_token: No reply message - disconnected"
+            "(ERROR|error): get_channel_token: No reply message - disconnected"
             ]
 
         ccm_ignore.extend(common_ignore)
@@ -485,14 +371,14 @@ class crm_lha(ClusterManager):
         ccm = Process(self, "ccm", triggersreboot=self.fastfail, pats = [
                     "State transition .* S_RECOVERY",
                     "CCM connection appears to have failed",
-                    "crmd: .*Action A_RECOVER .* not supported",
-                    "crmd: .*Input I_TERMINATE from do_recover",
+                    "crmd.*Action A_RECOVER .* not supported",
+                    "crmd.*Input I_TERMINATE from do_recover",
                     "Exiting to recover from CCM connection failure",
-                    "crmd:.*do_exit: Could not recover from internal error",
-                    "crmd: .*I_ERROR.*(ccm_dispatch|crmd_cib_connection_destroy)",
-                    "crmd .*exited with return code 2.",
-                    "attrd .*exited with return code 1.",
-                    "cib .*exited with return code 2.",
+                    r"crmd.*: Could not recover from internal error",
+                    "crmd.*I_ERROR.*(ccm_dispatch|crmd_cib_connection_destroy)",
+                    "crmd.*exited with return code 2.",
+                    "attrd.*exited with return code 1.",
+                    "cib.*exited with return code 2.",
 
 # Not if it was fenced
 #                    "A new node joined the cluster",
@@ -510,21 +396,21 @@ class crm_lha(ClusterManager):
                     "State transition .* S_RECOVERY",
                     "Lost connection to the CIB service",
                     "Connection to the CIB terminated...",
-                    "crmd: .*Input I_TERMINATE from do_recover",
-                    "crmd: .*I_ERROR.*crmd_cib_connection_destroy",
-                    "crmd:.*do_exit: Could not recover from internal error",
-                    "crmd .*exited with return code 2.",
-                    "attrd .*exited with return code 1.",
+                    "crmd.*Input I_TERMINATE from do_recover",
+                    "crmd.*I_ERROR.*crmd_cib_connection_destroy",
+                    r"crmd.*: Could not recover from internal error",
+                    "crmd.*exited with return code 2.",
+                    "attrd.*exited with return code 1.",
                     ], badnews_ignore = common_ignore)
 
         lrmd = Process(self, "lrmd", triggersreboot=self.fastfail, pats = [
                     "State transition .* S_RECOVERY",
                     "LRM Connection failed",
-                    "crmd: .*I_ERROR.*lrm_connection_destroy",
+                    "crmd.*I_ERROR.*lrm_connection_destroy",
                     "State transition S_STARTING -> S_PENDING",
-                    "crmd: .*Input I_TERMINATE from do_recover",
-                    "crmd:.*do_exit: Could not recover from internal error",
-                    "crmd .*exited with return code 2.",
+                    "crmd.*Input I_TERMINATE from do_recover",
+                    r"crmd.*: Could not recover from internal error",
+                    "crmd.*exited with return code 2.",
                     ], badnews_ignore = common_ignore)
 
         crmd = Process(self, "crmd", triggersreboot=self.fastfail, pats = [
@@ -538,42 +424,41 @@ class crm_lha(ClusterManager):
 
         pengine = Process(self, "pengine", triggersreboot=self.fastfail, pats = [
                     "State transition .* S_RECOVERY",
-                    "crmd .*exited with return code 2.",
-                    "crmd: .*Input I_TERMINATE from do_recover",
-                    "crmd: .*do_exit: Could not recover from internal error",
-                    "crmd: .*CRIT: pe_connection_destroy: Connection to the Policy Engine failed",
-                    "crmd: .*I_ERROR.*save_cib_contents",
-                    "crmd .*exited with return code 2.",
+                    "crmd.*exited with return code 2.",
+                    "crmd.*Input I_TERMINATE from do_recover",
+                    r"crmd.*: Could not recover from internal error",
+                    r"crmd.*CRIT.*: Connection to the Policy Engine failed",
+                    "crmd.*I_ERROR.*save_cib_contents",
+                    "crmd.*exited with return code 2.",
                     ], badnews_ignore = common_ignore, dc_only=1)
 
         if self.Env["DoFencing"] == 1 :
-            complist.append(Process(self, "stonithd", triggersreboot=self.fastfail, dc_pats = [
-                        "crmd: .*CRIT: tengine_stonith_connection_destroy: Fencing daemon connection failed",
+            complist.append(Process(self, "stoniths", triggersreboot=self.fastfail, dc_pats = [
+                        r"crmd.*CRIT.*: Fencing daemon connection failed",
                         "Attempting connection to fencing daemon",
-                        "te_connect_stonith: Connected",
                     ], badnews_ignore = stonith_ignore))
 
         if self.fastfail == 0:
             ccm.pats.extend([
                 "attrd .* exited with return code 1",
-                "ERROR: Respawning client .*attrd",
-                "cib .* exited with return code 2",
-                "ERROR: Respawning client .*cib",
-                "crmd .* exited with return code 2",
-                "ERROR: Respawning client .*crmd" 
+                "(ERROR|error): Respawning client .*attrd",
+                "cib.* exited with return code 2",
+                "(ERROR|error): Respawning client .*cib",
+                "crmd.* exited with return code 2",
+                "(ERROR|error): Respawning client .*crmd" 
                 ])
             cib.pats.extend([
-                "attrd .* exited with return code 1",
-                "ERROR: Respawning client .*attrd",
-                "crmd .* exited with return code 2",
-                "ERROR: Respawning client .*crmd" 
+                "attrd.* exited with return code 1",
+                "(ERROR|error): Respawning client .*attrd",
+                "crmd.* exited with return code 2",
+                "(ERROR|error): Respawning client .*crmd" 
                 ])
             lrmd.pats.extend([
-                "crmd .* exited with return code 2",
-                "ERROR: Respawning client .*crmd" 
+                "crmd.* exited with return code 2",
+                "(ERROR|error): Respawning client .*crmd" 
                 ])
             pengine.pats.extend([
-                "ERROR: Respawning client .*crmd" 
+                "(ERROR|error): Respawning client .*crmd" 
                 ])
 
         complist.append(ccm)
@@ -585,16 +470,16 @@ class crm_lha(ClusterManager):
         return complist
 
     def NodeUUID(self, node):
-        lines = self.rsh(node, self["UUIDQueryCmd"], 1)
+        lines = self.rsh(node, self.templates["UUIDQueryCmd"], 1)
         for line in lines:
-            self.debug("UUIDLine:"+ line)
+            self.debug("UUIDLine:" + line)
             m = re.search(r'%s.+\((.+)\)' % node, line)
             if m:
                 return m.group(1)
         return ""
 
     def StandbyStatus(self, node):
-        out=self.rsh(node, self["StandbyQueryCmd"]%node, 1)
+        out=self.rsh(node, self.templates["StandbyQueryCmd"] % node, 1)
         if not out:
             return "off"
         out = out[:-1]
@@ -605,9 +490,33 @@ class crm_lha(ClusterManager):
     # status == "off": Enter Active mode
     def SetStandbyMode(self, node, status):
         current_status = self.StandbyStatus(node)
-        cmd = self["StandbyCmd"] % (node, status)
+        cmd = self.templates["StandbyCmd"] % (node, status)
         ret = self.rsh(node, cmd)
         return True
+
+    def AddDummyRsc(self, node, rid):
+        rsc_xml = """ '<resources>
+                <primitive class=\"ocf\" id=\"%s\" provider=\"pacemaker\" type=\"Dummy\">
+                    <operations>
+                        <op id=\"%s-interval-10s\" interval=\"10s\" name=\"monitor\"/
+                    </operations>
+                </primitive>
+            </resources>'""" % (rid, rid)
+        constraint_xml = """ '<constraints>
+                <rsc_location id=\"location-%s-%s\" node=\"%s\" rsc=\"%s\" score=\"INFINITY\"/>
+            </constraints>'
+            """ % (rid, node, node, rid)
+
+        self.rsh(node, self.templates['CibAddXml'] % (rsc_xml))
+        self.rsh(node, self.templates['CibAddXml'] % (constraint_xml))
+
+    def RemoveDummyRsc(self, node, rid):
+        constraint = "\"//rsc_location[@rsc='%s']\"" % (rid)
+        rsc = "\"//primitive[@id='%s']\"" % (rid)
+
+        self.rsh(node, self.templates['CibDelXpath'] % constraint)
+        self.rsh(node, self.templates['CibDelXpath'] % rsc)
+
 
 #######################################################################
 #
