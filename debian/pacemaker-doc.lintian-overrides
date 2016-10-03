@@ -1,0 +1,3 @@
+# Doxygen's embedded jquery library should be retained; see 
+# https://sources.debian.net/src/doxygen/1.8.8-5/debian/README.jquery/
+embedded-javascript-library

@@ -1,0 +1,4 @@
+usr/include/pacemaker/crm/cib.h
+usr/include/pacemaker/crm/cib/util.h
+usr/lib/*/libcib.so
+usr/lib/*/pkgconfig/pacemaker-cib.pc

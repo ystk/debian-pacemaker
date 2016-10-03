@@ -1,0 +1,35 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Wed, 24 Feb 2016 16:40:16 +0100
+Subject: Fix typo: afer -> after
+
+---
+ crmd/te_events.c | 2 +-
+ pengine/graph.c  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/crmd/te_events.c b/crmd/te_events.c
+index 09abb13..0a23b1f 100644
+--- a/crmd/te_events.c
++++ b/crmd/te_events.c
+@@ -628,7 +628,7 @@ process_graph_event(xmlNode * event, const char *event_node)
+     } else {
+         if (update_failcount(event, event_node, rc, target_rc,
+                              (transition_num == -1), ignore_failures)) {
+-            /* Turns out this wasn't an lrm status refresh update aferall */
++            /* Turns out this wasn't an lrm status refresh update after all */
+             stop_early = FALSE;
+             desc = "failed";
+         }
+diff --git a/pengine/graph.c b/pengine/graph.c
+index 4bc23d5..4e1af52 100644
+--- a/pengine/graph.c
++++ b/pengine/graph.c
+@@ -516,7 +516,7 @@ update_action(action_t * then)
+             first = rsc_expand_action(first);
+         }
+         if (first != other->action) {
+-            crm_trace("Ordering %s afer %s instead of %s", then->uuid, first->uuid,
++            crm_trace("Ordering %s after %s instead of %s", then->uuid, first->uuid,
+                       other->action->uuid);
+         }
+ 

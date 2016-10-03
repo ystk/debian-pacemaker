@@ -1,0 +1,3 @@
+usr/include/pacemaker/crm/stonith-ng.h
+usr/lib/*/libstonithd.so
+usr/lib/*/pkgconfig/pacemaker-fencing.pc

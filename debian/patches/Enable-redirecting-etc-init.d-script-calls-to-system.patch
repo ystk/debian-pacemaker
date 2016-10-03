@@ -1,0 +1,39 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Thu, 17 Dec 2015 10:12:01 +0100
+Subject: Enable redirecting /etc/init.d/$script calls to systemd
+
+---
+ lrmd/pacemaker_remote.in | 4 ++++
+ mcp/pacemaker.in         | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/lrmd/pacemaker_remote.in b/lrmd/pacemaker_remote.in
+index fd2d7b2..3749ef0 100644
+--- a/lrmd/pacemaker_remote.in
++++ b/lrmd/pacemaker_remote.in
+@@ -20,6 +20,10 @@
+ # Description:		Starts and stops the Pacemaker remote agent for non-cluster nodes
+ ### END INIT INFO
+ 
++# The systemd package provides /lib/lsb/init-functions.d/40-systemd
++# to redirect /etc/init.d/$script calls to systemctl. (Thanks: Lintian.)
++. /lib/lsb/init-functions
++
+ desc="Pacemaker Remote Agent"
+ prog="pacemaker_remoted"
+ cman=0
+diff --git a/mcp/pacemaker.in b/mcp/pacemaker.in
+index 7da7d9c..ee7cf9e 100644
+--- a/mcp/pacemaker.in
++++ b/mcp/pacemaker.in
+@@ -21,6 +21,10 @@
+ # Description:		Starts and stops Pacemaker Cluster Manager.
+ ### END INIT INFO
+ 
++# The systemd package provides /lib/lsb/init-functions.d/40-systemd
++# to redirect /etc/init.d/$script calls to systemctl. (Thanks: Lintian.)
++. /lib/lsb/init-functions
++
+ desc="Pacemaker Cluster Manager"
+ prog="pacemakerd"
+ 

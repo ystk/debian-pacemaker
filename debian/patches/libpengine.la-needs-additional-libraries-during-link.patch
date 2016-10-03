@@ -1,0 +1,21 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Sun, 13 Sep 2015 19:14:18 +0200
+Subject: libpengine.la needs additional libraries during linking
+
+---
+ pengine/Makefile.am | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pengine/Makefile.am b/pengine/Makefile.am
+index f79ce58..95d639e 100644
+--- a/pengine/Makefile.am
++++ b/pengine/Makefile.am
+@@ -67,7 +67,7 @@ libpengine_la_SOURCES	= pengine.c allocate.c utils.c constraints.c
+ libpengine_la_SOURCES  += native.c group.c clone.c master.c graph.c utilization.c
+ 
+ libpengine_la_LIBADD    = $(top_builddir)/lib/pengine/libpe_status.la \
+-	$(top_builddir)/lib/cib/libcib.la
++	$(top_builddir)/lib/cib/libcib.la ../lib/common/libcrmcommon.la -lqb -lglib-2.0 -lxml2
+ 
+ pengine_SOURCES	= main.c
+ pengine_LDADD	= $(top_builddir)/lib/cib/libcib.la $(COMMONLIBS)

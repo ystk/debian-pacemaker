@@ -1,0 +1,51 @@
+#!/bin/sh -e
+
+# Determine header:Depends substitutions describing the C header
+# interdependencies of the libdevel packages built from this source package.
+#
+# Arguments: package-specific include subdirectory names
+
+cd debian
+
+pkgs=$(grep-dctrl -sPackage -n -FSection libdevel control)
+DEB_HOST_MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+# Use headers from the package directories
+for p in $pkgs; do
+    includes="$includes -I$p/usr/include -I$p/usr/include/$DEB_HOST_MULTIARCH"
+    for dir in "$@"; do
+        includes="$includes -I$p/usr/include/$dir -I$p/usr/include/$DEB_HOST_MULTIARCH/$dir"
+    done
+done
+
+# Generate a Makefile to parse gcc -MM output and write out
+# the necessary substitutions
+{
+# For each dependency (header file) take the first path component (the
+# package name), sort them removing the duplicates, filter out the name
+# of the container package (in $@, from -MT), and append the constraint.
+# Store this expansion in a variable for easier quoting.
+echo 'headerDepLine=header:Depends=\
+$(foreach pkg,$(filter-out $@, $(sort \
+		$(foreach dep,$^,$(firstword $(subst /, ,$(dep)))))) \
+	,$(pkg) (= $${binary:Version}),)'
+
+for pkg in $pkgs; do
+    found_headers=no
+    if [ -d "$pkg" ]; then
+        for header in $(find "$pkg" -name "*.h"); do
+            found_headers=yes
+            gcc -MM -MT "$pkg" -E $includes $header
+        done
+    else
+        echo ".PHONY: $pkg"
+    fi
+
+    if [ "$found_headers" = yes ]; then
+        printf "\techo '\$(headerDepLine)' >>'%s.substvars'\n" "$pkg"
+    fi
+done
+# Insulate from the outer make (usually running debian/rules) and consider
+# all targets out of date, as our targets are the package names, which exist
+# as directories
+} | MAKEFLAGS= MAKELEVEL= make --always-make --makefile=- $pkgs

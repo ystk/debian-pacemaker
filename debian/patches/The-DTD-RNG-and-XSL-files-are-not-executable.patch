@@ -1,0 +1,34 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Thu, 25 Feb 2016 12:19:18 +0100
+Subject: The DTD, RNG and XSL files are not executable
+
+---
+ xml/Makefile.am | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xml/Makefile.am b/xml/Makefile.am
+index de522c7..378eec7 100644
+--- a/xml/Makefile.am
++++ b/xml/Makefile.am
+@@ -18,10 +18,10 @@
+ MAINTAINERCLEANFILES    = Makefile.in
+ 
+ dtddir			= $(CRM_DTD_DIRECTORY)
+-dtd_SCRIPTS		= crm.dtd crm-transitional.dtd
++dtd_DATA		= crm.dtd crm-transitional.dtd
+ 
+ xsltdir			= $(dtddir)
+-xslt_SCRIPTS		= upgrade06.xsl upgrade-*.xsl
++xslt_DATA		= upgrade06.xsl upgrade-*.xsl
+ 
+ RNGdir			= $(dtddir)
+ 
+@@ -54,7 +54,7 @@ RNG_files	 	= $(foreach base,$(RNG_base),$(wildcard $(base)*.rng))
+ # List of non-Pacemaker RNGs
+ RNG_extra		= crm_mon.rng
+ 
+-RNG_SCRIPTS		= $(RNG_files) $(RNG_generated) $(RNG_extra)
++RNG_DATA		= $(RNG_files) $(RNG_generated) $(RNG_extra)
+ 
+ EXTRA_DIST		= best-match.sh
+ 

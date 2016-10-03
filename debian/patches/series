@@ -1,0 +1,12 @@
+libpengine.la-needs-additional-libraries-during-link.patch
+Debianize-crm_mon.service.patch
+Debianize-pacemaker_remote.service.patch
+Synchronize-the-provided-name-with-the-filename.patch
+Restarting-pacemaker-adds-confusion-only.patch
+Enable-redirecting-etc-init.d-script-calls-to-system.patch
+Fix-typo-existance-existence.patch
+Fix-typo-Initalizing-Initializing.patch
+Auto-export-the-init-script-variables-read-from-the-.patch
+Fix-typo-afer-after.patch
+The-DTD-RNG-and-XSL-files-are-not-executable.patch
+Create-CRM_CORE_DIR-during-installation.patch

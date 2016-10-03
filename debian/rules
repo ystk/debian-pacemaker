@@ -1,0 +1,82 @@
+#!/usr/bin/make -f
+
+# see FEATURE AREAS in dpkg-buildflags(1)
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# Ensure that we link against all needed libraries (cf. Policy 10.2)
+# This needs adding libraries to libpengine_la_LIBADD
+# Not upstreamed, see https://github.com/ClusterLabs/pacemaker/pull/800
+export DEB_LDFLAGS_MAINT_APPEND=-Wl,-z,defs
+
+# Avoid useless dependencies in the utilities
+export DEB_LDFLAGS_MAINT_APPEND+=-Wl,--as-needed
+
+%:
+	dh $@ --parallel --with autoreconf,systemd
+
+# autoreconf options taken from autogen.sh
+# without symlink usage (-s) to make --as-needed effective
+override_dh_autoreconf:
+	dh_autoreconf --as-needed autoreconf -- -vif -Wno-portability
+
+override_dh_auto_configure:
+	dh_auto_configure -- --disable-static \
+		--libexecdir=/usr/lib
+# because the daemon executables and Nagios plugins don't need multiarch paths
+
+override_dh_auto_build:
+	dh_auto_build
+	$(MAKE) doxygen
+
+# make check does not check the compiled software, but rebuilds everything
+# with clang.  This takes a lot of time and does not help us at all.  Skip.
+override_dh_auto_test:
+
+override_dh_install:
+	rm -r	debian/tmp/usr/share/pacemaker/tests \
+		debian/tmp/usr/lib/python2.7/dist-packages/cts \
+		debian/tmp/usr/lib/*/lib*.la \
+		debian/tmp/usr/share/doc/pacemaker/COPYING \
+		debian/tmp/usr/share/doc/pacemaker/COPYING.LIB \
+		doc/api/html/*.md5
+	# in absence of systemd the service files aren't installed:
+	rm -f	debian/tmp/lib/systemd/system/crm_mon.service
+	dh_install --fail-missing
+	install -D -m 644 mcp/pacemaker.sysconfig debian/pacemaker-common/etc/default/pacemaker
+	debian/check_header_deps pacemaker
+
+override_dh_installchangelogs:
+	dh_installchangelogs ChangeLog
+
+override_dh_installinit:
+# Upstream ships the pacemaker and pacemaker-remote the init files,
+# so we have to force the maintainer script modifications
+	dh_installinit -p pacemaker --onlyscripts
+	dh_installinit -p pacemaker-remote --onlyscripts --name=pacemaker_remote
+# There's no crm_mon init script, just ship our service and default file
+	dh_installinit -p pacemaker-cli-utils --noscripts --name=crm_mon
+	dh_installinit --remaining-packages
+
+# The crm_mon.service usually needs configuration and is not run on each node
+override_dh_systemd_enable:
+	dh_systemd_enable -p pacemaker-cli-utils --no-enable
+	dh_systemd_enable --remaining-packages
+
+# Play safe
+.DELETE_ON_ERROR:
+
+DESC_SUBST=debian/description.subst
+
+$(DESC_SUBST): debian/description
+	tr '\n' _ < $< | sed 's/^/DESCRIPTION=/;s/_/$${Newline}/g' >$@
+
+override_dh_gencontrol: $(DESC_SUBST)
+	debian/check_header_deps
+	dh_gencontrol -- -T$<
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf doc/api
+
+override_dh_clean:
+	dh_clean $(DESC_SUBST)

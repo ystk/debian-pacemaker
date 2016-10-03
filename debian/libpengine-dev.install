@@ -1,0 +1,5 @@
+usr/include/pacemaker/crm/pengine
+usr/lib/*/libpe_rules.so
+usr/lib/*/libpe_status.so
+usr/lib/*/libpengine.so
+usr/lib/*/pkgconfig/pacemaker-pengine.pc

@@ -1,0 +1,10 @@
+At its core, Pacemaker is a distributed finite state machine capable of
+co-ordinating the startup and recovery of inter-related services across
+a set of machines.
+
+Pacemaker understands many different resource types (OCF, SYSV, systemd)
+and can accurately model the relationships between them (colocation,
+ordering).
+
+It can even use technology such as Docker to automatically isolate the
+resources managed by the cluster.

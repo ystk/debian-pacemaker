@@ -1,0 +1,3 @@
+usr/include/pacemaker/crm/services.h
+usr/lib/*/libcrmservice.so
+usr/lib/*/pkgconfig/pacemaker-service.pc

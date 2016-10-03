@@ -1,0 +1,39 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Thu, 25 Feb 2016 13:18:57 +0100
+Subject: Create CRM_CORE_DIR during installation
+
+This directory is created by the daemons at runtime anyway, but this
+change makes the ownership more explicit and the structure more uniform,
+reducing packaging overhead.
+---
+ Makefile.am       | 2 ++
+ pacemaker.spec.in | 1 -
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile.am b/Makefile.am
+index 49fe5df..0edf0c9 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -54,8 +54,10 @@ core-clean:
+ install-exec-local:
+ 	$(INSTALL) -d $(DESTDIR)/$(LCRSODIR)
+ 	$(INSTALL) -d -m 750 $(DESTDIR)/$(CRM_CONFIG_DIR)
++	$(INSTALL) -d -m 750 $(DESTDIR)/$(CRM_CORE_DIR)
+ 	$(INSTALL) -d -m 750 $(DESTDIR)/$(CRM_BLACKBOX_DIR)
+ 	-chown $(CRM_DAEMON_USER):$(CRM_DAEMON_GROUP) $(DESTDIR)/$(CRM_CONFIG_DIR)
++	-chown $(CRM_DAEMON_USER):$(CRM_DAEMON_GROUP) $(DESTDIR)/$(CRM_CORE_DIR)
+ 	-chown $(CRM_DAEMON_USER):$(CRM_DAEMON_GROUP) $(DESTDIR)/$(CRM_BLACKBOX_DIR)
+ if BUILD_CS_PLUGIN
+ 	rm -f $(DESTDIR)$(LCRSODIR)/pacemaker.lcrso $(DESTDIR)$(LCRSODIR)/service_crm.so
+diff --git a/pacemaker.spec.in b/pacemaker.spec.in
+index 78aece0..29d037f 100644
+--- a/pacemaker.spec.in
++++ b/pacemaker.spec.in
+@@ -284,7 +284,6 @@ rm -rf %{buildroot}
+ make DESTDIR=%{buildroot} docdir=%{pcmk_docdir} V=1 install
+ 
+ mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig
+-mkdir -p ${RPM_BUILD_ROOT}%{_var}/lib/pacemaker/cores
+ install -m 644 mcp/pacemaker.sysconfig ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig/pacemaker
+ install -m 644 tools/crm_mon.sysconfig ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig/crm_mon
+ 

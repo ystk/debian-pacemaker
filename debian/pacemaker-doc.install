@@ -1,0 +1,4 @@
+doc/api/html					usr/share/doc/pacemaker-doc
+usr/share/doc/pacemaker/Clusters_from_Scratch	usr/share/doc/pacemaker-doc
+usr/share/doc/pacemaker/Pacemaker_Explained	usr/share/doc/pacemaker-doc
+usr/share/doc/pacemaker/Pacemaker_Remote	usr/share/doc/pacemaker-doc

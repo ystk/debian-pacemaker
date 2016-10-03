@@ -1,0 +1,3 @@
+usr/include/pacemaker/crm/cluster.h
+usr/lib/*/libcrmcluster.so
+usr/lib/*/pkgconfig/pacemaker-cluster.pc

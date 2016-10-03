@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = purge ]; then
+    # keep this list in sync with that in the postinst
+    for i in /var/lib/pacemaker/pengine \
+             /var/lib/pacemaker/cib \
+             /var/lib/pacemaker/cores \
+             /var/lib/pacemaker/blackbox; do
+        if dpkg-statoverride --list "$i" >/dev/null 2>&1; then
+            dpkg-statoverride --remove "$i"
+        fi
+        rm -rf "$i"
+    done
+fi
+
+#DEBHELPER#

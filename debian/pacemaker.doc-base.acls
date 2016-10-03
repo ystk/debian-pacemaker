@@ -1,0 +1,11 @@
+Document: pacemaker-acls
+Title: Pacemaker Access Control Lists
+Author: Tim Serong <tserong@novell.com>
+Section: System/Administration
+
+Format: HTML
+Index: /usr/share/doc/pacemaker/acls.html
+Files: /usr/share/doc/pacemaker/acls.html
+
+Format: Text
+Files: /usr/share/doc/pacemaker/acls.txt.gz
