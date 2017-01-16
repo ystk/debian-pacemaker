@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #
 #	SysInfo OCF Resource Agent
@@ -39,7 +39,7 @@ meta_data() {
 	cat <<END
 <?xml version="1.0"?>
 <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
-<resource-agent name="SysInfo">
+<resource-agent name="SysInfo" version="1.0">
 <version>1.0</version>
 
 <longdesc lang="en">
@@ -56,6 +56,7 @@ Sample Linux output:
    ram_total:      513
    ram_free:       117
    root_free:      2.4
+   #health_disk:   red
 
 Sample Darwin output:
    arch:   i386
@@ -67,6 +68,7 @@ Sample Darwin output:
    ram_total:      2016
    ram_free:       787
    root_free:      13
+   #health_disk:   green
 
 Units:
    free_swap: Mb
@@ -119,6 +121,7 @@ Can be one of: B, K, M, G, T, P (case-insensitive)
 <longdesc lang="en">
 The amount of free space required in monitored disks. If any
 of the monitored disks has less than this amount of free space,
+, with the node attribute "#health_disk" changing to "red",
 all resources will move away from the node. Set the node-health-strategy
 property appropriately for this to take effect.
 If the unit is not specified, it defaults to disk_unit.
@@ -146,7 +149,11 @@ UpdateStat() {
     name=$1; shift
     value="$*"
     printf "%s:\t%s\n" "$name" "$value"
-    ${HA_SBIN_DIR}/attrd_updater ${OCF_RESKEY_delay} -S status -n $name -v "$value"
+    if [ "$__OCF_ACTION" = "start" ] ; then
+        ${HA_SBIN_DIR}/attrd_updater ${OCF_RESKEY_delay} -S status -n $name -B "$value"
+    else 
+        ${HA_SBIN_DIR}/attrd_updater ${OCF_RESKEY_delay} -S status -n $name -v "$value"
+    fi
 }
 
 SysInfoStats() {
@@ -164,6 +171,20 @@ SysInfoStats() {
 	    cpu_type=`system_profiler SPHardwareDataType | awk -F': ' '/^CPU Type/ {print $2; exit}'`
 	    cpu_speed=`system_profiler SPHardwareDataType | awk -F': ' '/^CPU Speed/ {print $2; exit}'`
 	    cpu_cores=`system_profiler SPHardwareDataType | awk -F': ' '/^Number Of/ {print $2; exit}'`
+	    cpu_load=`uptime | awk '{ print $10 }'`
+	;;
+	"FreeBSD")
+	    cpu_type=`sysctl -in hw.model`
+	    cpu_speed=`sysctl -in dev.cpu.0.freq`
+	    cpu_cores=`sysctl -in hw.ncpu`
+	    cpu_load=`sysctl -in vm.loadavg | awk '{ print $4 }'`
+
+	    free_pages=`sysctl -in vm.stats.vm.v_free_count`
+	    page_count=`sysctl -in vm.stats.vm.v_page_count`
+	    page_size=`sysctl -in vm.stats.vm.v_page_size`
+
+	    mem=`expr $free_pages \* $page_size / 1024 / 1024`M
+	    mem_total=`expr $page_count \* $page_size / 1024 / 1024`M
 	;;
 	"Linux")
 	    if [ -f /proc/cpuinfo ]; then
@@ -171,6 +192,7 @@ SysInfoStats() {
 		cpu_speed=`awk -F': ' '/bogomips/ {print $2; exit}' /proc/cpuinfo`
 		cpu_cores=`grep "^processor" /proc/cpuinfo | wc -l`
 	    fi
+	    cpu_load=`uptime | awk '{ print $10 }'`
 
 	    if [ -f /proc/meminfo ]; then
 	        # meminfo results are in kB
@@ -199,9 +221,9 @@ SysInfoStats() {
 	UpdateStat cpu_cores "$cpu_cores"
     fi
 
-    loads=`uptime`
-    load15=`echo ${loads} | awk '{print $10}'`
-    UpdateStat cpu_load $load15
+    if [ x != x"$cpu_load" ]; then
+	UpdateStat cpu_load "$cpu_load"
+    fi
 
     if [ ! -z "$mem" ]; then
         # Massage the memory values
@@ -220,8 +242,11 @@ SysInfoStats() {
 	    disk_free=`SysInfo_hdd_units $disk_free`
 	    UpdateStat ${disk_label}_free $disk_free
 	    if [ -n "$MIN_FREE" ]; then
-		test $disk_free -le $MIN_FREE &&
+		if [ $disk_free -le $MIN_FREE ]; then
 		    UpdateStat "#health_disk" "red"
+		else
+		    UpdateStat "#health_disk" "green"
+		fi
 	    fi
 	fi
     done
@@ -323,11 +348,13 @@ if [ $# -ne 1 ]; then
     exit $OCF_ERR_ARGS
 fi
 
-: ${OCF_RESKEY_pidfile:="$HA_VARRUN/SysInfo-${OCF_RESOURCE_INSTANCE}"}
+: ${OCF_RESKEY_pidfile:="${HA_VARRUN%%/}/SysInfo-${OCF_RESOURCE_INSTANCE}"}
 : ${OCF_RESKEY_disk_unit:="G"}
 : ${OCF_RESKEY_clone:="0"}
 if [ x != x${OCF_RESKEY_delay} ]; then
     OCF_RESKEY_delay="-d ${OCF_RESKEY_delay}"
+else 
+    OCF_RESKEY_delay="-d 0"
 fi
 MIN_FREE=""
 if [ -n "$OCF_RESKEY_min_disk_free" ]; then

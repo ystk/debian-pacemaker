@@ -1,0 +1,56 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@debian.org>
+Date: Sat, 5 Nov 2016 03:37:34 +0100
+Subject: New patch Spelling-fix-Negligable-Negligible.patch
+
+Spelling fix: Negligable -> Negligible
+---
+ .../Spelling-fix-Negligable-Negligible.patch       | 30 ++++++++++++++++++++++
+ debian/patches/series                              |  1 +
+ 2 files changed, 31 insertions(+)
+ create mode 100644 debian/patches/Spelling-fix-Negligable-Negligible.patch
+
+diff --git a/debian/patches/Spelling-fix-Negligable-Negligible.patch b/debian/patches/Spelling-fix-Negligable-Negligible.patch
+new file mode 100644
+index 0000000..9c19f30
+--- /dev/null
++++ b/debian/patches/Spelling-fix-Negligable-Negligible.patch
+@@ -0,0 +1,30 @@
++From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@debian.org>
++Date: Sat, 5 Nov 2016 03:25:32 +0100
++Subject: Spelling fix: Negligable -> Negligible
++
++---
++ crmd/throttle.c | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/crmd/throttle.c b/crmd/throttle.c
++index 9a49fbd..9392902 100644
++--- a/crmd/throttle.c
+++++ b/crmd/throttle.c
++@@ -377,7 +377,7 @@ throttle_handle_load(float load, const char *desc, int cores)
++         return throttle_low;
++     }
++ 
++-    crm_trace("Negligable %s detected: %f", desc, adjusted_load);
+++    crm_trace("Negligible %s detected: %f", desc, adjusted_load);
++     return throttle_none;
++ }
++ 
++@@ -433,7 +433,7 @@ throttle_mode(void)
++             mode |= throttle_low;
++ 
++         } else {
++-            crm_trace("Negligable %s detected: %f", desc, load);
+++            crm_trace("Negligible %s detected: %f", desc, load);
++         }
++     }
++ 
+diff --git a/debian/patches/series b/debian/patches/series
+index ba6ba61..d68b0a2 100644
+--- a/debian/patches/series
++++ b/debian/patches/series
+@@ -10,3 +10,4 @@ from-upstream/Reorder-definitions-to-make-omitting-tests-easier.patch
+ from-upstream/Split-definitions-to-make-omitting-tests-easier.patch
+ Make-the-testing-infrastructure-optional.patch
+ from-upstream/High-libcrmcommon-fix-CVE-2016-7035-improper-IPC-gua.patch
++Spelling-fix-Negligable-Negligible.patch

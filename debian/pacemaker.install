@@ -12,10 +12,6 @@ usr/sbin/fence_legacy
 usr/sbin/fence_pcmk
 usr/sbin/pacemakerd
 usr/share/doc/pacemaker/AUTHORS
-usr/share/doc/pacemaker/acls.html
-usr/share/doc/pacemaker/acls.txt
-usr/share/doc/pacemaker/crm_fencing.html
-usr/share/doc/pacemaker/crm_fencing.txt
 usr/share/man/man7/ocf_pacemaker_controld.7
 usr/share/man/man7/ocf_pacemaker_o2cb.7
 usr/share/man/man7/ocf_pacemaker_remote.7

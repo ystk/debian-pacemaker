@@ -694,7 +694,7 @@
      <action_set>
       <rsc_op id="2" operation="monitor" operation_key="pgsql_5555_monitor_30000" on_node="arc-tkincaidlx.wsicorp.com" on_node_uuid="2ba293d2-2c30-4957-ad8d-59ad15bb7e26">
         <primitive id="pgsql_5555" class="ocf" provider="heartbeat" type="pgsql"/>
-        <attributes CRM_meta_interval="30000" CRM_meta_name="monitor" CRM_meta_start_delay="10000" CRM_meta_timeout="40000"  logfile="/var/log/pg.log" pgctl="/usr/local/pgsql/bin/pg_ctl" pgdata="/mirror/pgsql/data_hb" pgdba="postgres" pgport="5555" psql="/usr/local/pgsql/bin/psql" start_opt="-p 5555"/>
+        <attributes CRM_meta_interval="30000" CRM_meta_name="monitor" CRM_meta_start_delay="10000" CRM_meta_timeout="30000"  logfile="/var/log/pg.log" pgctl="/usr/local/pgsql/bin/pg_ctl" pgdata="/mirror/pgsql/data_hb" pgdba="postgres" pgport="5555" psql="/usr/local/pgsql/bin/psql" start_opt="-p 5555"/>
        </rsc_op>
      </action_set>
      <inputs>
@@ -752,6 +752,9 @@
     <action_set>
       <crm_event id="44" operation="do_shutdown" operation_key="do_shutdown-arc-dknightlx" on_node="arc-dknightlx" on_node_uuid="8c16c69e-f753-49cf-ba89-3ae421940042">
         <attributes CRM_meta_op_no_wait="true" />
+        <downed>
+          <node id="8c16c69e-f753-49cf-ba89-3ae421940042"/>
+        </downed>
       </crm_event>
     </action_set>
     <inputs>

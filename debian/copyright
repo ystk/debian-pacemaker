@@ -27,7 +27,7 @@ Copyright: 2009-2015 Andrew Beekhof
 License: CC-BY-SA-3
 
 Files: debian/*
-Copyright: 1999-2015 Debian-HA-Maintainers <debian-ha-maintainers@lists.alioth.debian.org>
+Copyright: 1999-2016 Debian-HA-Maintainers <debian-ha-maintainers@lists.alioth.debian.org>
                      Paolo Molaro <lupus@debian.org>
                      Martin Loschwitz <madkiss@debian.org>
                      Luk Claes <luk@debian.org>
@@ -36,7 +36,7 @@ Copyright: 1999-2015 Debian-HA-Maintainers <debian-ha-maintainers@lists.alioth.d
                      Anibal Monsalve Salazar <anibal@debian.org>
                      Andrew Beekhof <abeekhof@suse.de>
                      Richard B Winters <rik@mmogp.com>
-                     Ferenc Wágner <wferi@niif.hu>
+                     Ferenc Wágner <wferi@debian.org>
 License: GPL-2+
 
 License: GPL-2+

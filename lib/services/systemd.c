@@ -21,6 +21,7 @@
 #include <crm/services.h>
 #include <crm/common/mainloop.h>
 
+#include <sys/stat.h>
 #include <gio/gio.h>
 #include <services_private.h>
 #include <systemd.h>
@@ -150,16 +151,13 @@ systemd_daemon_reload(int timeout)
 {
     static unsigned int reload_count = 0;
     const char *method = "Reload";
-
+    DBusMessage *msg = systemd_new_method(BUS_NAME".Manager", method);
 
     reload_count++;
-    if(reload_count % 10 == 0) {
-        DBusMessage *msg = systemd_new_method(BUS_NAME".Manager", method);
+    CRM_ASSERT(msg != NULL);
+    pcmk_dbus_send(msg, systemd_proxy, systemd_daemon_reload_complete, GUINT_TO_POINTER(reload_count), timeout);
+    dbus_message_unref(msg);
 
-        CRM_ASSERT(msg != NULL);
-        pcmk_dbus_send(msg, systemd_proxy, systemd_daemon_reload_complete, GUINT_TO_POINTER(reload_count), timeout);
-        dbus_message_unref(msg);
-    }
     return TRUE;
 }
 
@@ -249,7 +247,7 @@ systemd_unit_by_name(const gchar * arg_name, svc_action_t *op)
     char *name = NULL;
 
 /*
-  Equivalent to GetUnit if its already loaded
+  Equivalent to GetUnit if it's already loaded
   <method name="LoadUnit">
    <arg name="name" type="s" direction="in"/>
    <arg name="unit" type="o" direction="out"/>
@@ -548,11 +546,18 @@ systemd_unit_exec_with_unit(svc_action_t * op, const char *unit)
         FILE *file_strm = NULL;
         char *override_dir = crm_strdup_printf("%s/%s.service.d", SYSTEMD_OVERRIDE_ROOT, op->agent);
         char *override_file = crm_strdup_printf("%s/%s.service.d/50-pacemaker.conf", SYSTEMD_OVERRIDE_ROOT, op->agent);
+        mode_t orig_umask;
 
         method = "StartUnit";
         crm_build_path(override_dir, 0755);
 
+        /* Ensure the override file is world-readable. This is not strictly
+         * necessary, but it avoids a systemd warning in the logs.
+         */
+        orig_umask = umask(S_IWGRP | S_IWOTH);
         file_strm = fopen(override_file, "w");
+        umask(orig_umask);
+
         if (file_strm != NULL) {
             /* TODO: Insert the start timeout in too */
             char *override = crm_strdup_printf(

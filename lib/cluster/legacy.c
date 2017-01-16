@@ -52,6 +52,7 @@ void *ais_ipc_ctx = NULL;
 
 hdb_handle_t ais_ipc_handle = 0;
 
+#if SUPPORT_CMAN
 static bool valid_cman_name(const char *name, uint32_t nodeid) 
 {
     bool rc = TRUE;
@@ -66,6 +67,7 @@ static bool valid_cman_name(const char *name, uint32_t nodeid)
     free(fakename);
     return rc;
 }
+#endif
 
 static gboolean
 plugin_get_details(uint32_t * id, char **uname)
@@ -183,7 +185,7 @@ send_plugin_text(int class, struct iovec *iov)
 void
 terminate_cs_connection(crm_cluster_t *cluster)
 {
-    crm_notice("Disconnecting from Corosync");
+    crm_info("Disconnecting from Corosync");
 
     if (is_classic_ais_cluster()) {
         if (ais_ipc_handle) {
@@ -212,6 +214,8 @@ terminate_cs_connection(crm_cluster_t *cluster)
 #  endif
     ais_fd_async = -1;
     ais_fd_sync = -1;
+
+    crm_notice("Disconnected from Corosync");
 }
 
 void
@@ -389,7 +393,7 @@ cman_event_callback(cman_handle_t handle, void *privdata, int reason, int arg)
 
                 if (cman_nodes[lpc].cn_nodeid == 0) {
                     /* Never allow node ID 0 to be considered a member #315711 */
-                    /* Skip entirely, its a qdisk */
+                    /* Skip entirely, it's a qdisk */
                     continue;
                 }
 
@@ -938,7 +942,7 @@ crm_is_corosync_peer_active(const crm_node_t * node)
 
     } else if (is_cman_cluster() && (node->processes & crm_proc_cpg)) {
         /* If we can still talk to our peer process on that node,
-         * then its also part of the corosync membership
+         * then it's also part of the corosync membership
          */
         crm_trace("%s: processes=%.8x", node->uname, node->processes);
         return TRUE;

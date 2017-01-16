@@ -1,7 +1,7 @@
 libcib.so.4 libcib4 #MINVER#
 * Build-Depends-Package: libcib-dev
- (arch=!powerpc !ppc64 !ppc64el)__start___verbose@Base 1.1.12
- (arch=!powerpc !ppc64 !ppc64el)__stop___verbose@Base 1.1.12
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__start___verbose@Base 1.1.12
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__stop___verbose@Base 1.1.12
  anon_cred_c@Base 1.1.12
  cib_apply_patch_event@Base 1.1.12
  cib_client_add_notify_callback@Base 1.1.12

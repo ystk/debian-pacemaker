@@ -42,7 +42,7 @@ CRM_TRACE_INIT_DATA(pe_status);
 	}								\
     } while(0)
 
-gboolean unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
+gboolean unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op, xmlNode ** last_failure,
                        enum action_fail_response *failed, pe_working_set_t * data_set);
 static gboolean determine_remote_online_status(pe_working_set_t * data_set, node_t * this_node);
 
@@ -67,19 +67,20 @@ pe_fence_node(pe_working_set_t * data_set, node_t * node, const char *reason)
 {
     CRM_CHECK(node, return);
 
-    /* fence remote nodes living in a container by marking the container as failed. */
+    /* A guest node is fenced by marking its container as failed */
     if (is_container_remote_node(node)) {
         resource_t *rsc = node->details->remote_rsc->container;
         if (is_set(rsc->flags, pe_rsc_failed) == FALSE) {
-            crm_warn("Remote node %s will be fenced by recovering container resource %s",
+            crm_warn("Guest node %s will be fenced (by recovering %s) %s",
                 node->details->uname, rsc->id, reason);
             /* node->details->unclean = TRUE; */
             node->details->remote_requires_reset = TRUE;
             set_bit(rsc->flags, pe_rsc_failed);
         }
     } else if (is_dangling_container_remote_node(node)) {
-        crm_info("Fencing remote node %s has already occurred, container no longer exists. cleaning up dangling connection resource:  %s",
-                  node->details->uname, reason);
+        crm_info("Cleaning up dangling connection resource for guest node %s %s"
+                 " (fencing is already done, guest resource no longer exists)",
+                 node->details->uname, reason);
         set_bit(node->details->remote_rsc->flags, pe_rsc_failed);
 
     } else if (is_baremetal_remote_node(node)) {
@@ -167,6 +168,10 @@ unpack_config(xmlNode * config, pe_working_set_t * data_set)
 
     data_set->stonith_action = pe_pref(data_set->config_hash, "stonith-action");
     crm_trace("STONITH will %s nodes", data_set->stonith_action);
+
+    set_config_flag(data_set, "concurrent-fencing", pe_flag_concurrent_fencing);
+    crm_debug("Concurrent fencing is %s",
+              is_set(data_set->flags, pe_flag_concurrent_fencing) ? "enabled" : "disabled");
 
     set_config_flag(data_set, "stop-all-resources", pe_flag_stop_everything);
     crm_debug("Stop all active resources: %s",
@@ -1145,6 +1150,8 @@ unpack_remote_status(xmlNode * status, pe_working_set_t * data_set)
 {
     const char *id = NULL;
     const char *uname = NULL;
+    const char *shutdown = NULL;
+
     GListPtr gIter = NULL;
 
     xmlNode *state = NULL;
@@ -1190,6 +1197,15 @@ unpack_remote_status(xmlNode * status, pe_working_set_t * data_set)
         attrs = find_xml_node(state, XML_TAG_TRANSIENT_NODEATTRS, FALSE);
         add_node_attrs(attrs, this_node, TRUE, data_set);
 
+        shutdown = g_hash_table_lookup(this_node->details->attrs, XML_CIB_ATTR_SHUTDOWN);
+        if (shutdown != NULL && safe_str_neq("0", shutdown)) {
+            resource_t *rsc = this_node->details->remote_rsc;
+
+            crm_info("Node %s is shutting down", this_node->details->uname);
+            this_node->details->shutdown = TRUE;
+            rsc->next_role = RSC_ROLE_STOPPED;
+        }
+ 
         if (crm_is_true(g_hash_table_lookup(this_node->details->attrs, "standby"))) {
             crm_info("Node %s is in standby-mode", this_node->details->uname);
             this_node->details->standby = TRUE;
@@ -1266,7 +1282,7 @@ determine_online_status_no_fencing(pe_working_set_t * data_set, xmlNode * node_s
 
     } else {
         /* mark it unclean */
-        pe_fence_node(data_set, this_node, "unexpectedly down");
+        pe_fence_node(data_set, this_node, "because node is unexpectedly down");
         crm_info("\tin_cluster=%s, is_peer=%s, join=%s, expected=%s",
                  crm_str(in_cluster), crm_str(is_peer), crm_str(join), crm_str(exp_state));
     }
@@ -1748,7 +1764,7 @@ unpack_find_resource(pe_working_set_t * data_set, node_t * node, const char *rsc
         crm_trace("%s not found: %s", rsc_id, parent ? parent->id : "orphan");
 
     } else if (rsc->variant > pe_native) {
-        crm_trace("%s is no longer a primitve resource, the lrm_resource entry is obsolete",
+        crm_trace("%s is no longer a primitive resource, the lrm_resource entry is obsolete",
                   rsc_id);
         return NULL;
 
@@ -1824,21 +1840,24 @@ process_rsc_state(resource_t * rsc, node_t * node,
         }
     }
 
+    /* If a managed resource is believed to be running, but node is down ... */
     if (rsc->role > RSC_ROLE_STOPPED
         && node->details->online == FALSE && is_set(rsc->flags, pe_rsc_managed)) {
 
         char *reason = NULL;
         gboolean should_fence = FALSE;
 
-        /* if this is a remote_node living in a container, fence the container
-         * by recovering it. Mark the resource as unmanaged. Once the container
-         * and remote connenction are re-established, the status section will
-         * get reset in the crmd freeing up this resource to run again once we
-         * are sure we know the resources state. */
+        /* If this is a guest node, fence it (regardless of whether fencing is
+         * enabled, because guest node fencing is done by recovery of the
+         * container resource rather than by stonithd). Mark the resource
+         * we're processing as failed. When the guest comes back up, its
+         * operation history in the CIB will be cleared, freeing the affected
+         * resource to run again once we are sure we know its state.
+         */
         if (is_container_remote_node(node)) {
             set_bit(rsc->flags, pe_rsc_failed);
-
             should_fence = TRUE;
+
         } else if (is_set(data_set->flags, pe_flag_stonith_enabled)) {
             if (is_baremetal_remote_node(node) && node->details->remote_rsc && is_not_set(node->details->remote_rsc->flags, pe_rsc_failed)) {
                 /* setting unseen = true means that fencing of the remote node will
@@ -2125,6 +2144,7 @@ unpack_lrm_rsc_state(node_t * node, xmlNode * rsc_entry, pe_working_set_t * data
 
     xmlNode *migrate_op = NULL;
     xmlNode *rsc_op = NULL;
+    xmlNode *last_failure = NULL;
 
     enum action_fail_response on_fail = FALSE;
     enum rsc_role_e saved_role = RSC_ROLE_UNKNOWN;
@@ -2168,7 +2188,7 @@ unpack_lrm_rsc_state(node_t * node, xmlNode * rsc_entry, pe_working_set_t * data
             migrate_op = rsc_op;
         }
 
-        unpack_rsc_op(rsc, node, rsc_op, &on_fail, data_set);
+        unpack_rsc_op(rsc, node, rsc_op, &last_failure, &on_fail, data_set);
     }
 
     /* create active recurring operations as optional */
@@ -2523,7 +2543,7 @@ record_failed_op(xmlNode *op, node_t* node, pe_working_set_t * data_set)
     xmlNode *xIter = NULL;
     const char *op_key = crm_element_value(op, XML_LRM_ATTR_TASK_KEY);
 
-    if ((node->details->shutdown) && (node->details->online == FALSE)) {
+    if (node->details->online == FALSE) {
         return;
     }
 
@@ -2552,7 +2572,8 @@ static const char *get_op_key(xmlNode *xml_op)
 }
 
 static void
-unpack_rsc_op_failure(resource_t *rsc, node_t *node, int rc, xmlNode *xml_op, enum action_fail_response *on_fail, pe_working_set_t * data_set) 
+unpack_rsc_op_failure(resource_t * rsc, node_t * node, int rc, xmlNode * xml_op, xmlNode ** last_failure,
+                      enum action_fail_response * on_fail, pe_working_set_t * data_set)
 {
     int interval = 0;
     bool is_probe = FALSE;
@@ -2563,6 +2584,9 @@ unpack_rsc_op_failure(resource_t *rsc, node_t *node, int rc, xmlNode *xml_op, en
     const char *op_version = crm_element_value(xml_op, XML_ATTR_CRM_VERSION);
 
     CRM_ASSERT(rsc);
+
+    *last_failure = xml_op;
+
     crm_element_value_int(xml_op, XML_LRM_ATTR_INTERVAL, &interval);
     if(interval == 0 && safe_str_eq(task, CRMD_ACTION_STATUS)) {
         is_probe = TRUE;
@@ -2866,7 +2890,7 @@ static bool check_operation_expiry(resource_t *rsc, node_t *node, int rc, xmlNod
         digest_data = rsc_action_digest_cmp(rsc, xml_op, node, data_set);
 
         if (digest_data->rc == RSC_DIGEST_UNKNOWN) {
-            crm_trace("rsc op %s on node %s does not have a op digest to compare against", rsc->id,
+            crm_trace("rsc op %s/%s on node %s does not have a op digest to compare against", rsc->id,
                       key, node->details->id);
         } else if (digest_data->rc != RSC_DIGEST_MATCH) {
             clear_failcount = 1;
@@ -2930,12 +2954,14 @@ get_action_on_fail(resource_t *rsc, const char *key, const char *task, pe_workin
 }
 
 static void
-update_resource_state(resource_t *rsc, node_t * node, xmlNode * xml_op, const char *task, int rc,
-                      enum action_fail_response *on_fail, pe_working_set_t * data_set) 
+update_resource_state(resource_t * rsc, node_t * node, xmlNode * xml_op, const char * task, int rc,
+                      xmlNode * last_failure, enum action_fail_response * on_fail, pe_working_set_t * data_set)
 {
     gboolean clear_past_failure = FALSE;
 
     CRM_ASSERT(rsc);
+    CRM_ASSERT(xml_op);
+
     if (rc == PCMK_OCF_NOT_RUNNING) {
         clear_past_failure = TRUE;
 
@@ -2943,7 +2969,15 @@ update_resource_state(resource_t *rsc, node_t * node, xmlNode * xml_op, const ch
         rsc->role = RSC_ROLE_STOPPED;
 
     } else if (safe_str_eq(task, CRMD_ACTION_STATUS)) {
-        clear_past_failure = TRUE;
+        if (last_failure) {
+            const char *op_key = get_op_key(xml_op);
+            const char *last_failure_key = get_op_key(last_failure);
+
+            if (safe_str_eq(op_key, last_failure_key)) {
+                clear_past_failure = TRUE;
+            }
+        }
+
         if (rsc->role < RSC_ROLE_STARTED) {
             set_active(rsc);
         }
@@ -2972,7 +3006,6 @@ update_resource_state(resource_t *rsc, node_t * node, xmlNode * xml_op, const ch
         unpack_rsc_migration(rsc, node, xml_op, data_set);
 
     } else if (rsc->role < RSC_ROLE_STARTED) {
-        /* migrate_to and migrate_from will land here */
         pe_rsc_trace(rsc, "%s active on %s", rsc->id, node->details->uname);
         set_active(rsc);
     }
@@ -3010,7 +3043,7 @@ update_resource_state(resource_t *rsc, node_t * node, xmlNode * xml_op, const ch
 }
 
 gboolean
-unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
+unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op, xmlNode ** last_failure,
               enum action_fail_response * on_fail, pe_working_set_t * data_set)
 {
     int task_id = 0;
@@ -3065,7 +3098,7 @@ unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
     }
 
     if (status == PCMK_LRM_OP_ERROR) {
-        /* Older versions set this if rc != 0 but its up to us to decide */
+        /* Older versions set this if rc != 0 but it's up to us to decide */
         status = PCMK_LRM_OP_DONE;
     }
 
@@ -3161,7 +3194,7 @@ unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
 
         case PCMK_LRM_OP_DONE:
             pe_rsc_trace(rsc, "%s/%s completed on %s", rsc->id, task, node->details->uname);
-            update_resource_state(rsc, node, xml_op, task, rc, on_fail, data_set);
+            update_resource_state(rsc, node, xml_op, task, rc, *last_failure, on_fail, data_set);
             break;
 
         case PCMK_LRM_OP_NOT_INSTALLED:
@@ -3174,7 +3207,7 @@ unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
                 *on_fail = action_fail_migrate;
             }
             resource_location(parent, node, -INFINITY, "hard-error", data_set);
-            unpack_rsc_op_failure(rsc, node, rc, xml_op, on_fail, data_set);
+            unpack_rsc_op_failure(rsc, node, rc, xml_op, last_failure, on_fail, data_set);
             break;
 
         case PCMK_LRM_OP_ERROR:
@@ -3191,7 +3224,7 @@ unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
                 crm_warn("Pretending the failure of %s (rc=%d) on %s succeeded",
                          task_key, rc, node->details->uname);
 
-                update_resource_state(rsc, node, xml_op, task, target_rc, on_fail, data_set);
+                update_resource_state(rsc, node, xml_op, task, target_rc, *last_failure, on_fail, data_set);
                 crm_xml_add(xml_op, XML_ATTR_UNAME, node->details->uname);
                 set_bit(rsc->flags, pe_rsc_failure_ignored);
 
@@ -3202,7 +3235,7 @@ unpack_rsc_op(resource_t * rsc, node_t * node, xmlNode * xml_op,
                 }
 
             } else {
-                unpack_rsc_op_failure(rsc, node, rc, xml_op, on_fail, data_set);
+                unpack_rsc_op_failure(rsc, node, rc, xml_op, last_failure, on_fail, data_set);
 
                 if(status == PCMK_LRM_OP_ERROR_HARD) {
                     do_crm_log(rc != PCMK_OCF_NOT_INSTALLED?LOG_ERR:LOG_NOTICE,

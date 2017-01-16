@@ -18,7 +18,7 @@
 
 MAINTAINERCLEANFILES    = Makefile.in
 
-SUBDIRS                 =  resources logrotate
+SUBDIRS                 =  alerts resources logrotate
 
 mibdir = $(datadir)/snmp/mibs
 mib_DATA = PCMK-MIB.txt

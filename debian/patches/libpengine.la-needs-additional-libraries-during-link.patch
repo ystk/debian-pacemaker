@@ -7,7 +7,7 @@ Subject: libpengine.la needs additional libraries during linking
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/pengine/Makefile.am b/pengine/Makefile.am
-index f79ce58..95d639e 100644
+index 172a86b..4bf82dd 100644
 --- a/pengine/Makefile.am
 +++ b/pengine/Makefile.am
 @@ -67,7 +67,7 @@ libpengine_la_SOURCES	= pengine.c allocate.c utils.c constraints.c

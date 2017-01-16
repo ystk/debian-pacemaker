@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -ex
+
+service corosync start
+service pacemaker start
+sleep 60
+
+crm_mon -1 | fgrep -20 "Online: [ $(hostname -s) ]"
+
+service pacemaker stop
+service corosync stop

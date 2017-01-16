@@ -63,7 +63,6 @@ typedef struct attribute_value_s {
         char *nodename;
         char *current;
         char *requested;
-        char *stored;
 } attribute_value_t;
 
 
@@ -71,7 +70,7 @@ void write_attribute(attribute_t *a);
 void write_or_elect_attribute(attribute_t *a);
 void attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter);
 void attrd_peer_sync(crm_node_t *peer, xmlNode *xml);
-void attrd_peer_remove(uint32_t nodeid, const char *host, gboolean uncache, const char *source);
+void attrd_peer_remove(const char *host, gboolean uncache, const char *source);
 
 static gboolean
 send_attrd_message(crm_node_t * node, xmlNode * data)
@@ -101,7 +100,6 @@ free_attribute_value(gpointer data)
     free(v->nodename);
     free(v->current);
     free(v->requested);
-    free(v->stored);
     free(v);
 }
 
@@ -171,6 +169,8 @@ create_attribute(xmlNode *xml)
     if(dampen > 0) {
         a->timeout_ms = dampen;
         a->timer = mainloop_timer_add(a->id, a->timeout_ms, FALSE, attribute_timer_cb, a);
+    } else if (dampen < 0) {
+	crm_warn("Ignoring invalid delay %s for attribute %s", value, a->id);
     }
 
     g_hash_table_replace(attributes, a->id, a);
@@ -248,6 +248,13 @@ attrd_client_update(xmlNode *xml)
         free(host);
         regfree(r_patt);
         free(r_patt);
+        return;
+
+    } else if (attr == NULL) {
+        crm_err("Update request did not specify attribute or regular expression");
+        free(key);
+        free(set);
+        free(host);
         return;
     }
 
@@ -525,30 +532,20 @@ attrd_peer_message(crm_node_t *peer, xmlNode *xml)
         }
     }
 
-    if (safe_str_eq(op, ATTRD_OP_UPDATE)) {
+    if (safe_str_eq(op, ATTRD_OP_UPDATE) || safe_str_eq(op, ATTRD_OP_UPDATE_BOTH) || safe_str_eq(op, ATTRD_OP_UPDATE_DELAY)) {
         attrd_peer_update(peer, xml, host, FALSE);
 
     } else if (safe_str_eq(op, ATTRD_OP_SYNC)) {
         attrd_peer_sync(peer, xml);
 
     } else if (safe_str_eq(op, ATTRD_OP_PEER_REMOVE)) {
-        int host_id = 0;
-        char *endptr = NULL;
-
-        host_id = strtol(host, &endptr, 10);
-        if (errno != 0 || endptr == host || *endptr != '\0') {
-            host_id = 0;
-        } else {
-            host = NULL;
-        }
-        attrd_peer_remove(host_id, host, TRUE, peer->uname);
-
+        attrd_peer_remove(host, TRUE, peer->uname);
 
     } else if (safe_str_eq(op, ATTRD_OP_SYNC_RESPONSE)
               && safe_str_neq(peer->uname, attrd_cluster->uname)) {
         xmlNode *child = NULL;
 
-        crm_notice("Processing %s from %s", op, peer->uname);
+        crm_info("Processing %s from %s", op, peer->uname);
         for (child = __xml_first_child(xml); child != NULL; child = __xml_next(child)) {
             host = crm_element_value(child, F_ATTRD_HOST);
             attrd_peer_update(peer, child, host, TRUE);
@@ -583,16 +580,22 @@ attrd_peer_sync(crm_node_t *peer, xmlNode *xml)
     free_xml(sync);
 }
 
+/*!
+ * \internal
+ * \brief Remove all attributes and optionally peer cache entries for a node
+ *
+ * \param[in] host     Name of node to purge
+ * \param[in] uncache  If TRUE, remove node from peer caches
+ * \param[in] source   Who requested removal (only used for logging)
+ */
 void
-attrd_peer_remove(uint32_t nodeid, const char *host, gboolean uncache, const char *source)
+attrd_peer_remove(const char *host, gboolean uncache, const char *source)
 {
     attribute_t *a = NULL;
     GHashTableIter aIter;
 
+    CRM_CHECK(host != NULL, return);
     crm_notice("Removing all %s attributes for %s", host, source);
-    if(host == NULL) {
-        return;
-    }
 
     g_hash_table_iter_init(&aIter, attributes);
     while (g_hash_table_iter_next(&aIter, NULL, (gpointer *) & a)) {
@@ -603,7 +606,7 @@ attrd_peer_remove(uint32_t nodeid, const char *host, gboolean uncache, const cha
 
     if (uncache) {
         crm_remote_peer_cache_remove(host);
-        reap_crm_member(nodeid, host);
+        reap_crm_member(0, host);
     }
 }
 
@@ -621,6 +624,22 @@ static attribute_value_t *
 attrd_lookup_or_create_value(GHashTable *values, const char *host, xmlNode *xml)
 {
     attribute_value_t *v = g_hash_table_lookup(values, host);
+    int is_remote = 0;
+
+    crm_element_value_int(xml, F_ATTRD_IS_REMOTE, &is_remote);
+    if (is_remote) {
+        /* If we previously assumed this node was an unseen cluster node,
+         * remove its entry from the cluster peer cache.
+         */
+        crm_node_t *dup = crm_find_peer(0, host);
+
+        if (dup && (dup->uuid == NULL)) {
+            reap_crm_member(0, host);
+        }
+
+        /* Ensure this host is in the remote peer cache */
+        crm_remote_peer_cache_add(host);
+    }
 
     if (v == NULL) {
         v = calloc(1, sizeof(attribute_value_t));
@@ -629,11 +648,7 @@ attrd_lookup_or_create_value(GHashTable *values, const char *host, xmlNode *xml)
         v->nodename = strdup(host);
         CRM_ASSERT(v->nodename != NULL);
 
-        crm_element_value_int(xml, F_ATTRD_IS_REMOTE, &v->is_remote);
-        if (v->is_remote == TRUE) {
-            crm_remote_peer_cache_add(host);
-        }
-
+        v->is_remote = is_remote;
         g_hash_table_replace(values, v->nodename, v);
     }
     return(v);
@@ -643,15 +658,68 @@ void
 attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
 {
     bool changed = FALSE;
+    attribute_t *a;
     attribute_value_t *v = NULL;
+    int dampen = 0;
 
+    const char *op = crm_element_value(xml, F_ATTRD_TASK);
     const char *attr = crm_element_value(xml, F_ATTRD_ATTRIBUTE);
     const char *value = crm_element_value(xml, F_ATTRD_VALUE);
+    const char *dvalue = crm_element_value(xml, F_ATTRD_DAMPEN);
 
-    attribute_t *a = g_hash_table_lookup(attributes, attr);
+    if (attr == NULL) {
+        crm_warn("Peer update did not specify attribute");
+        return;
+    }
 
+    a = g_hash_table_lookup(attributes, attr);
     if(a == NULL) {
-        a = create_attribute(xml);
+        if (op == NULL /* The xml children from an ATTRD_OP_SYNC_RESPONSE have no F_ATTRD_TASK */
+            || safe_str_eq(op, ATTRD_OP_UPDATE)
+            || safe_str_eq(op, ATTRD_OP_UPDATE_BOTH)) {
+            a = create_attribute(xml);
+        } else {
+            crm_warn("Update error (attribute %s not found)", attr);
+            return;
+        }
+    }
+    
+    if (op == NULL /* The xml children from an ATTRD_OP_SYNC_RESPONSE have no F_ATTRD_TASK */
+        || safe_str_eq(op, ATTRD_OP_UPDATE_BOTH)
+        || safe_str_eq(op, ATTRD_OP_UPDATE_DELAY)) {
+        if (dvalue) {
+            dampen = crm_get_msec(dvalue); 
+            if (dampen >= 0) {
+                if (a->timeout_ms != dampen) {
+                    mainloop_timer_stop(a->timer);
+                    mainloop_timer_del(a->timer);
+                    a->timeout_ms = dampen;
+                    if (dampen > 0) {
+                        a->timer = mainloop_timer_add(a->id, a->timeout_ms, FALSE, attribute_timer_cb, a);
+                        crm_info("Update attribute %s with delay %dms (%s)", a->id, dampen, dvalue);
+                    } else {
+                        a->timer = NULL;
+                        crm_info("Update attribute %s with not delay", a->id);
+                    }
+                    //if dampen is changed, attrd writes in a current value immediately.
+                    write_or_elect_attribute(a);
+                    if (safe_str_eq(op, ATTRD_OP_UPDATE_DELAY)) {
+                        return;
+                    }
+                } else {
+                    if (safe_str_eq(op, ATTRD_OP_UPDATE_DELAY)) {
+                        crm_trace("Unchanged attribute %s with delay %dms (%s).(ATTRD_OP_UPDATE_DELAY)", a->id, dampen, dvalue);
+                        return;
+                    }
+                }
+            } else {
+                crm_warn("Update error (A positive number is necessary for delay parameter. attribute %s : %dms (%s))", a->id, dampen, dvalue);
+                return;
+            }
+        } else {
+            crm_warn("Update error (delay parameter is necessary for the update of the attribute %s)", a->id);
+            return;
+        }
     }
 
     if(host == NULL) {
@@ -694,7 +762,6 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
             v->current = NULL;
         }
         changed = TRUE;
-
     } else {
         crm_trace("Unchanged %s[%s] from %s is %s", attr, host, peer->uname, value);
     }
@@ -774,7 +841,7 @@ attrd_peer_change_cb(enum crm_status_type kind, crm_node_t *peer, const void *da
             }
         } else {
             /* Remove all attribute values associated with lost nodes */
-            attrd_peer_remove(peer->id, peer->uname, FALSE, __FUNCTION__);
+            attrd_peer_remove(peer->uname, FALSE, "peer loss");
             if (peer_writer && safe_str_eq(peer->uname, peer_writer)) {
                 free(peer_writer);
                 peer_writer = NULL;
@@ -824,15 +891,9 @@ attrd_cib_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void *u
     g_hash_table_iter_init(&iter, a->values);
     while (g_hash_table_iter_next(&iter, (gpointer *) & peer, (gpointer *) & v)) {
         do_crm_log(level, "Update %d for %s[%s]=%s: %s (%d)", call_id, a->id, peer, v->requested, pcmk_strerror(rc), rc);
-
-        if(rc == pcmk_ok) {
-            free(v->stored);
-            v->stored = v->requested;
-            v->requested = NULL;
-
-        } else {
-            free(v->requested);
-            v->requested = NULL;
+        free(v->requested);
+        v->requested = NULL;
+        if (rc != pcmk_ok) {
             a->changed = TRUE; /* Attempt write out again */
         }
     }

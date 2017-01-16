@@ -158,7 +158,8 @@ feature_update_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, vo
     if (rc != pcmk_ok) {
         fsa_data_t *msg_data = NULL;
 
-        crm_notice("Update failed: %s (%d)", pcmk_strerror(rc), rc);
+        crm_notice("Feature update failed: %s "CRM_XS" rc=%d",
+                   pcmk_strerror(rc), rc);
         register_fsa_error(C_FSA_INTERNAL, I_ERROR, NULL);
     }
 }
@@ -173,7 +174,7 @@ do_dc_takeover(long long action,
     int rc = pcmk_ok;
     xmlNode *cib = NULL;
     const char *cluster_type = name_for_cluster_type(get_cluster_type());
-    const char *watchdog = NULL;
+    pid_t watchdog = pcmk_locate_sbd();
 
     crm_info("Taking over DC status for this partition");
     set_bit(fsa_input_register, R_THE_DC);
@@ -196,11 +197,8 @@ do_dc_takeover(long long action,
     fsa_cib_update(XML_TAG_CIB, cib, cib_quorum_override, rc, NULL);
     fsa_register_cib_callback(rc, FALSE, NULL, feature_update_callback);
 
-    watchdog = daemon_option("watchdog");
-    if (watchdog) {
-        update_attr_delegate(fsa_cib_conn, cib_none, XML_CIB_TAG_CRMCONFIG, NULL, NULL, NULL, NULL,
-                             XML_ATTR_HAVE_WATCHDOG, watchdog, FALSE, NULL, NULL);
-    }
+    update_attr_delegate(fsa_cib_conn, cib_none, XML_CIB_TAG_CRMCONFIG, NULL, NULL, NULL, NULL,
+                         XML_ATTR_HAVE_WATCHDOG, watchdog?"true":"false", FALSE, NULL, NULL);
 
     update_attr_delegate(fsa_cib_conn, cib_none, XML_CIB_TAG_CRMCONFIG, NULL, NULL, NULL, NULL,
                          "dc-version", PACEMAKER_VERSION "-" BUILD_VERSION, FALSE, NULL, NULL);
@@ -259,7 +257,7 @@ do_dc_release(long long action,
         register_fsa_input(C_FSA_INTERNAL, I_RELEASE_SUCCESS, NULL);
 
     } else {
-        crm_err("Unknown action %s", fsa_action2string(action));
+        crm_err("Unknown DC action %s", fsa_action2string(action));
     }
 
     crm_trace("Am I still the DC? %s", AM_I_DC ? XML_BOOLEAN_YES : XML_BOOLEAN_NO);

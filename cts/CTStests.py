@@ -751,7 +751,8 @@ class PartialStart(CTSTest):
 
         # We might do some fencing in the 2-node case if we make it up far enough
         return [
-            """Executing reboot fencing operation""",
+            r"Executing reboot fencing operation",
+            r"Requesting fencing \([^)]+\) of node ",
         ]
 
 #     Register StopOnebyOne as a good test to run
@@ -1113,8 +1114,8 @@ class MaintenanceMode(CTSTest):
         if action == "On":
             pats.append(r"pengine.*:\s+warning:.*Processing failed op %s for %s on" % (self.action, self.rid))
         else:
-            pats.append(self.templates["Pat:RscOpOK"] % (self.rid, "stop_0"))
-            pats.append(self.templates["Pat:RscOpOK"] % (self.rid, "start_0"))
+            pats.append(self.templates["Pat:RscOpOK"] % ("stop", self.rid))
+            pats.append(self.templates["Pat:RscOpOK"] % ("start", self.rid))
 
         watch = self.create_watch(pats, 60)
         watch.setwatch()
@@ -1135,7 +1136,7 @@ class MaintenanceMode(CTSTest):
 
     def insertMaintenanceDummy(self, node):
         pats = []
-        pats.append(("%s.*" % node) + (self.templates["Pat:RscOpOK"] % (self.rid, "start_0")))
+        pats.append(("%s.*" % node) + (self.templates["Pat:RscOpOK"] % ("start", self.rid)))
 
         watch = self.create_watch(pats, 60)
         watch.setwatch()
@@ -1153,7 +1154,7 @@ class MaintenanceMode(CTSTest):
 
     def removeMaintenanceDummy(self, node):
         pats = []
-        pats.append(self.templates["Pat:RscOpOK"] % (self.rid, "stop_0"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("stop", self.rid))
 
         watch = self.create_watch(pats, 60)
         watch.setwatch()
@@ -1263,7 +1264,7 @@ class MaintenanceMode(CTSTest):
             r"pengine.*: Recover %s\s*\(.*\)" % self.rid,
             r"Unknown operation: fail",
             r"(ERROR|error): sending stonithRA op to stonithd failed.",
-            self.templates["Pat:RscOpOK"] % (self.rid, ("%s_%d" % (self.action, self.interval))),
+            self.templates["Pat:RscOpOK"] % (self.action, self.rid),
             r"(ERROR|error).*: Action %s_%s_%d .* initiated outside of a transition" % (self.rid, self.action, self.interval),
         ]
 
@@ -1324,12 +1325,12 @@ class ResourceRecover(CTSTest):
             rsc.id, rsc.clone_id))
 
         if rsc.managed():
-            pats.append(self.templates["Pat:RscOpOK"] % (self.rid, "stop_0"))
+            pats.append(self.templates["Pat:RscOpOK"] % ("stop", self.rid))
             if rsc.unique():
-                pats.append(self.templates["Pat:RscOpOK"] % (self.rid, "start_0"))
+                pats.append(self.templates["Pat:RscOpOK"] % ("start", self.rid))
             else:
                 # Anonymous clones may get restarted with a different clone number
-                pats.append(self.templates["Pat:RscOpOK"] % (".*", "start_0"))
+                pats.append(self.templates["Pat:RscOpOK"] % ("start", ".*"))
 
         watch = self.create_watch(pats, 60)
         watch.setwatch()
@@ -1364,7 +1365,7 @@ class ResourceRecover(CTSTest):
             r"pengine.*: Recover (%s|%s)\s*\(.*\)" % (self.rid, self.rid_alt),
             r"Unknown operation: fail",
             r"(ERROR|error): sending stonithRA op to stonithd failed.",
-            self.templates["Pat:RscOpOK"] % (self.rid, ("%s_%d" % (self.action, self.interval))),
+            self.templates["Pat:RscOpOK"] % (self.action, self.rid),
             r"(ERROR|error).*: Action %s_%s_%d .* initiated outside of a transition" % (self.rid, self.action, self.interval),
         ]
 
@@ -1769,11 +1770,11 @@ class Reattach(CTSTest):
             return self.failure("Resource management not disabled")
 
         pats = []
-        pats.append(self.templates["Pat:RscOpOK"] % (".*", "start"))
-        pats.append(self.templates["Pat:RscOpOK"] % (".*", "stop"))
-        pats.append(self.templates["Pat:RscOpOK"] % (".*", "promote"))
-        pats.append(self.templates["Pat:RscOpOK"] % (".*", "demote"))
-        pats.append(self.templates["Pat:RscOpOK"] % (".*", "migrate"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", ".*"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("stop", ".*"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("promote", ".*"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("demote", ".*"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("migrate", ".*"))
 
         watch = self.create_watch(pats, 60, "ShutdownActivity")
         watch.setwatch()
@@ -1813,7 +1814,7 @@ class Reattach(CTSTest):
                 if r.rclass == "stonith":
 
                     self.debug("Ignoring start actions for %s" % r.id)
-                    ignore.append(self.templates["Pat:RscOpOK"] % (r.id, "start_0"))
+                    ignore.append(self.templates["Pat:RscOpOK"] % ("start", r.id))
 
         if self.local_badnews("ResourceActivity:", watch, ignore):
             return self.failure("Resources stopped or started after resource management was re-enabled")
@@ -2550,16 +2551,16 @@ class RemoteLXC(CTSTest):
     def start_lxc_simple(self, node):
 
         # restore any artifacts laying around from a previous test.
-        self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -R &>/dev/null")
+        self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -s -R &>/dev/null")
 
         # generate the containers, put them in the config, add some resources to them
         pats = [ ]
         watch = self.create_watch(pats, 120)
         watch.setwatch()
-        pats.append(self.templates["Pat:RscOpOK"] % ("lxc1", "start_0"))
-        pats.append(self.templates["Pat:RscOpOK"] % ("lxc2", "start_0"))
-        pats.append(self.templates["Pat:RscOpOK"] % ("lxc-ms", "start_0"))
-        pats.append(self.templates["Pat:RscOpOK"] % ("lxc-ms", "promote_0"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", "lxc1"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", "lxc2"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", "lxc-ms"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("promote", "lxc-ms"))
 
         self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -g -a -m -s -c %d &>/dev/null" % self.num_containers)
         self.set_timer("remoteSimpleInit")
@@ -2576,20 +2577,14 @@ class RemoteLXC(CTSTest):
         # as best as possible 
         if self.failed == 1:
             # restore libvirt and cib
-            self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -R &>/dev/null")
-            self.rsh(node, "crm_resource -C -r container1 &>/dev/null")
-            self.rsh(node, "crm_resource -C -r container2 &>/dev/null")
-            self.rsh(node, "crm_resource -C -r lxc1 &>/dev/null")
-            self.rsh(node, "crm_resource -C -r lxc2 &>/dev/null")
-            self.rsh(node, "crm_resource -C -r lxc-ms &>/dev/null")
-            time.sleep(20)
+            self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -s -R &>/dev/null")
             return
 
         watch = self.create_watch(pats, 120)
         watch.setwatch()
 
-        pats.append(self.templates["Pat:RscOpOK"] % ("container1", "stop_0"))
-        pats.append(self.templates["Pat:RscOpOK"] % ("container2", "stop_0"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("stop", "container1"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("stop", "container2"))
 
         self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -p &>/dev/null")
         self.set_timer("remoteSimpleCleanup")
@@ -2601,7 +2596,7 @@ class RemoteLXC(CTSTest):
             self.failed = 1
 
         # cleanup libvirt
-        self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -R &>/dev/null")
+        self.rsh(node, "/usr/share/pacemaker/tests/cts/lxc_autogen.sh -s -R &>/dev/null")
 
     def __call__(self, node):
         '''Perform the 'RemoteLXC' test. '''
@@ -2637,10 +2632,11 @@ class RemoteLXC(CTSTest):
             # ms resource used to be a clone.  As a result it looks like that 
             # resource is running in multiple locations when it shouldn't... But in
             # this instance we know why this error is occurring and that it is expected.
-            r"Calculated Transition .* /var/lib/pacemaker/pengine/pe-error",
+            r"Calculated [Tt]ransition .* /var/lib/pacemaker/pengine/pe-error",
             r"Resource lxc-ms .* is active on 2 nodes attempting recovery",
             r"Unknown operation: fail",
             r"(ERROR|error): sending stonithRA op to stonithd failed.",
+            r"VirtualDomain.*ERROR: Unable to determine emulator",
         ]
 
 AllTestClasses.append(RemoteLXC)
@@ -2764,6 +2760,14 @@ class RemoteDriver(CTSTest):
                 self.pcmk_started = 1
                 break
 
+    def kill_pcmk_remote(self, node):
+        """ Simulate a Pacemaker Remote daemon failure. """
+
+        # We kill the process to prevent a graceful stop,
+        # then stop it to prevent the OS from restarting it.
+        self.rsh(node, "killall -9 pacemaker_remoted")
+        self.stop_pcmk_remote(node)
+
     def start_metal(self, node):
         pcmk_started = 0
 
@@ -2785,7 +2789,7 @@ class RemoteDriver(CTSTest):
         pats = [ ]
         watch = self.create_watch(pats, 120)
         watch.setwatch()
-        pats.append(self.templates["Pat:RscOpOK"] % (self.remote_node, "start"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", self.remote_node))
         pats.append(self.templates["Pat:DC_IDLE"])
 
         self.add_connection_rsc(node)
@@ -2801,8 +2805,8 @@ class RemoteDriver(CTSTest):
             return
 
         pats = [ ]
-        pats.append(self.templates["Pat:RscOpOK"] % (self.remote_node, "migrate_to"))
-        pats.append(self.templates["Pat:RscOpOK"] % (self.remote_node, "migrate_from"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("migrate_to", self.remote_node))
+        pats.append(self.templates["Pat:RscOpOK"] % ("migrate_from", self.remote_node))
         pats.append(self.templates["Pat:DC_IDLE"])
         watch = self.create_watch(pats, 120)
         watch.setwatch()
@@ -2825,8 +2829,8 @@ class RemoteDriver(CTSTest):
             return
 
         watchpats = [ ]
-        watchpats.append(self.templates["Pat:RscRemoteOpOK"] % (self.remote_rsc, "stop", self.remote_node))
-        watchpats.append(self.templates["Pat:RscRemoteOpOK"] % (self.remote_rsc, "start", self.remote_node))
+        watchpats.append(self.templates["Pat:RscRemoteOpOK"] % ("stop", self.remote_rsc, self.remote_node))
+        watchpats.append(self.templates["Pat:RscRemoteOpOK"] % ("start", self.remote_rsc, self.remote_node))
         watchpats.append(self.templates["Pat:DC_IDLE"])
 
         watch = self.create_watch(watchpats, 120)
@@ -2855,7 +2859,7 @@ class RemoteDriver(CTSTest):
 
         # force stop the pcmk remote daemon. this will result in fencing
         self.debug("Force stopped active remote node")
-        self.stop_pcmk_remote(node)
+        self.kill_pcmk_remote(node)
 
         self.debug("Waiting for remote node to be fenced.")
         self.set_timer("remoteMetalFence")
@@ -2871,9 +2875,9 @@ class RemoteDriver(CTSTest):
         pats = [ ]
         watch = self.create_watch(pats, 240)
         watch.setwatch()
-        pats.append(self.templates["Pat:RscOpOK"] % (self.remote_node, "start"))
+        pats.append(self.templates["Pat:RscOpOK"] % ("start", self.remote_node))
         if self.remote_rsc_added == 1:
-            pats.append(self.templates["Pat:RscRemoteOpOK"] % (self.remote_rsc, "start", self.remote_node))
+            pats.append(self.templates["Pat:RscRemoteOpOK"] % ("start", self.remote_rsc, self.remote_node))
 
         # start the remote node again watch it integrate back into cluster.
         self.start_pcmk_remote(node)
@@ -2897,7 +2901,7 @@ class RemoteDriver(CTSTest):
         pats = [ ]
         watch = self.create_watch(pats, 120)
         watch.setwatch()
-        pats.append(self.templates["Pat:RscRemoteOpOK"] % (self.remote_rsc, "start", self.remote_node))
+        pats.append(self.templates["Pat:RscRemoteOpOK"] % ("start", self.remote_rsc, self.remote_node))
         pats.append(self.templates["Pat:DC_IDLE"])
 
         # Add a resource that must live on remote-node
@@ -2946,9 +2950,9 @@ class RemoteDriver(CTSTest):
         watch.setwatch()
 
         if self.remote_rsc_added == 1:
-            pats.append(self.templates["Pat:RscOpOK"] % (self.remote_rsc, "stop"))
+            pats.append(self.templates["Pat:RscOpOK"] % ("stop", self.remote_rsc))
         if self.remote_node_added == 1:
-            pats.append(self.templates["Pat:RscOpOK"] % (self.remote_node, "stop"))
+            pats.append(self.templates["Pat:RscOpOK"] % ("stop", self.remote_node))
 
         self.set_timer("remoteMetalCleanup")
 
@@ -3094,8 +3098,9 @@ class RemoteStonithd(RemoteDriver):
         ignore_pats = [
             r"Unexpected disconnect on remote-node",
             r"crmd.*:\s+error.*: Operation remote_.*_monitor",
+            r"crmd.*:\s+error.*: Result of monitor operation for remote_.*",
             r"pengine.*:\s+Recover remote_.*\s*\(.*\)",
-            r"Calculated Transition .* /var/lib/pacemaker/pengine/pe-error",
+            r"Calculated [Tt]ransition .* /var/lib/pacemaker/pengine/pe-error",
             r"error.*: Resource .*ocf::.* is active on 2 nodes attempting recovery",
         ]
 

@@ -791,7 +791,6 @@ unpack_location_tags(xmlNode * xml_obj, xmlNode ** expanded_xml, pe_working_set_
 
     xmlNode *new_xml = NULL;
     xmlNode *rsc_set_lh = NULL;
-    gboolean any_sets = FALSE;
 
     *expanded_xml = NULL;
 
@@ -846,13 +845,11 @@ unpack_location_tags(xmlNode * xml_obj, xmlNode ** expanded_xml, pe_working_set_
             crm_xml_add(rsc_set_lh, "role", state_lh);
             xml_remove_prop(new_xml, XML_RULE_ATTR_ROLE);
         }
-        any_sets = TRUE;
-    }
-
-    if (any_sets) {
         crm_log_xml_trace(new_xml, "Expanded rsc_location...");
         *expanded_xml = new_xml;
+
     } else {
+        /* No sets */
         free_xml(new_xml);
     }
 
@@ -864,19 +861,23 @@ unpack_location_set(xmlNode * location, xmlNode * set, pe_working_set_t * data_s
 {
     xmlNode *xml_rsc = NULL;
     resource_t *resource = NULL;
-    const char *set_id = ID(set);
-    const char *role = crm_element_value(set, "role");
-    const char *local_score = crm_element_value(set, XML_RULE_ATTR_SCORE);
+    const char *set_id;
+    const char *role;
+    const char *local_score;
 
     if (set == NULL) {
         crm_config_err("No resource_set object to process.");
         return FALSE;
     }
 
+    set_id = ID(set);
     if (set_id == NULL) {
         crm_config_err("resource_set must have an id");
         return FALSE;
     }
+
+    role = crm_element_value(set, "role");
+    local_score = crm_element_value(set, XML_RULE_ATTR_SCORE);
 
     for (xml_rsc = __xml_first_child(set); xml_rsc != NULL; xml_rsc = __xml_next_element(xml_rsc)) {
         if (crm_str_eq((const char *)xml_rsc->name, XML_TAG_RESOURCE_REF, TRUE)) {
@@ -897,27 +898,13 @@ unpack_location(xmlNode * xml_obj, pe_working_set_t * data_set)
     xmlNode *orig_xml = NULL;
     xmlNode *expanded_xml = NULL;
 
-    const char *id = crm_element_value(xml_obj, XML_ATTR_ID);
-
-    gboolean rc = TRUE;
-
-    if (xml_obj == NULL) {
-        crm_config_err("No rsc_location constraint object to process.");
+    if (unpack_location_tags(xml_obj, &expanded_xml, data_set) == FALSE) {
         return FALSE;
     }
 
-    if (id == NULL) {
-        crm_config_err("%s constraint must have an id", crm_element_name(xml_obj));
-        return FALSE;
-    }
-
-    rc = unpack_location_tags(xml_obj, &expanded_xml, data_set);
     if (expanded_xml) {
         orig_xml = xml_obj;
         xml_obj = expanded_xml;
-
-    } else if (rc == FALSE) {
-        return FALSE;
     }
 
     for (set = __xml_first_child(xml_obj); set != NULL; set = __xml_next_element(set)) {
@@ -925,6 +912,9 @@ unpack_location(xmlNode * xml_obj, pe_working_set_t * data_set)
             any_sets = TRUE;
             set = expand_idref(set, data_set->input);
             if (unpack_location_set(xml_obj, set, data_set) == FALSE) {
+                if (expanded_xml) {
+                    free_xml(expanded_xml);
+                }
                 return FALSE;
             }
         }
@@ -1159,6 +1149,48 @@ sort_cons_priority_rh(gconstpointer a, gconstpointer b)
     return strcmp(rsc_constraint1->rsc_rh->id, rsc_constraint2->rsc_rh->id);
 }
 
+static void
+anti_colocation_order(resource_t * first_rsc, int first_role,
+                      resource_t * then_rsc, int then_role,
+                      pe_working_set_t * data_set)
+{
+    const char *first_tasks[] = { NULL, NULL };
+    const char *then_tasks[] = { NULL, NULL };
+    int first_lpc = 0;
+    int then_lpc = 0;
+
+    /* Actions to make first_rsc lose first_role */
+    if (first_role == RSC_ROLE_MASTER) {
+        first_tasks[0] = CRMD_ACTION_DEMOTE;
+
+    } else {
+        first_tasks[0] = CRMD_ACTION_STOP;
+
+        if (first_role == RSC_ROLE_SLAVE) {
+            first_tasks[1] = CRMD_ACTION_PROMOTE;
+        }
+    }
+
+    /* Actions to make then_rsc gain then_role */
+    if (then_role == RSC_ROLE_MASTER) {
+        then_tasks[0] = CRMD_ACTION_PROMOTE;
+
+    } else {
+        then_tasks[0] = CRMD_ACTION_START;
+
+        if (then_role == RSC_ROLE_SLAVE) {
+            then_tasks[1] = CRMD_ACTION_DEMOTE;
+        }
+    }
+
+    for (first_lpc = 0; first_lpc <= 1 && first_tasks[first_lpc] != NULL; first_lpc++) {
+        for (then_lpc = 0; then_lpc <= 1 && then_tasks[then_lpc] != NULL; then_lpc++) {
+            new_rsc_order(first_rsc, first_tasks[first_lpc], then_rsc, then_tasks[then_lpc],
+                          pe_order_anti_colocation, data_set);
+        }
+    }
+}
+
 gboolean
 rsc_colocation_new(const char *id, const char *node_attr, int score,
                    resource_t * rsc_lh, resource_t * rsc_rh,
@@ -1210,10 +1242,8 @@ rsc_colocation_new(const char *id, const char *node_attr, int score,
     data_set->colocation_constraints = g_list_append(data_set->colocation_constraints, new_con);
 
     if (score <= -INFINITY) {
-        new_rsc_order(rsc_lh, CRMD_ACTION_STOP, rsc_rh, CRMD_ACTION_START,
-                      pe_order_anti_colocation, data_set);
-        new_rsc_order(rsc_rh, CRMD_ACTION_STOP, rsc_lh, CRMD_ACTION_START,
-                      pe_order_anti_colocation, data_set);
+        anti_colocation_order(rsc_lh, new_con->role_lh, rsc_rh, new_con->role_rh, data_set);
+        anti_colocation_order(rsc_rh, new_con->role_rh, rsc_lh, new_con->role_lh, data_set);
     }
 
     return TRUE;
@@ -1419,6 +1449,12 @@ custom_action_order(resource_t * lh_rsc, char *lh_action_task, action_t * lh_act
     }
 
     order = calloc(1, sizeof(order_constraint_t));
+
+    crm_trace("Creating[%d] %s %s %s - %s %s %s", data_set->order_id,
+              lh_rsc?lh_rsc->id:"NA", lh_action_task, lh_action?lh_action->uuid:"NA",
+              rh_rsc?rh_rsc->id:"NA", rh_action_task, rh_action?rh_action->uuid:"NA");
+
+    /* CRM_ASSERT(data_set->order_id != 291); */
 
     order->id = data_set->order_id++;
     order->type = type;

@@ -269,7 +269,9 @@ crm_signal_dispatch(GSource * source, GSourceFunc callback, gpointer userdata)
     crm_signal_t *sig = (crm_signal_t *) source;
 
     if(sig->signal != SIGCHLD) {
-        crm_notice("Invoking handler for signal %d: %s", sig->signal, strsignal(sig->signal));
+        crm_notice("Caught '%s' signal "CRM_XS" %d (%s handler)",
+                   strsignal(sig->signal), sig->signal,
+                   (sig->handler? "invoking" : "no"));
     }
 
     sig->trigger.trigger = FALSE;
@@ -656,7 +658,7 @@ mainloop_gio_callback(GIOChannel * gio, GIOCondition condition, gpointer data)
                 } else if (client->dispatch_fn_ipc) {
                     const char *buffer = crm_ipc_buffer(client->ipc);
 
-                    crm_trace("New message from %s[%p] = %d", client->name, client, rc, condition);
+                    crm_trace("New message from %s[%p] = %ld (I/O condition=%d)", client->name, client, rc, condition);
                     if (client->dispatch_fn_ipc(buffer, rc, client->userdata) < 0) {
                         crm_trace("Connection to %s no longer required", client->name);
                         keep = FALSE;
@@ -1150,7 +1152,7 @@ static gboolean mainloop_timer_cb(gpointer user_data)
     CRM_ASSERT(t != NULL);
 
     id = t->id;
-    t->id = 0; /* Ensure its unset during callbacks so that
+    t->id = 0; /* Ensure it's unset during callbacks so that
                 * mainloop_timer_running() works as expected
                 */
 

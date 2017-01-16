@@ -1,0 +1,44 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Thu, 23 Jun 2016 22:38:51 +0200
+Subject: Fix typo: Ingor{e,ing} -> Ignor{e,ing}
+
+---
+ ChangeLog        | 4 ++--
+ pengine/master.c | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 43d6d21..25a57f1 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -389,7 +389,7 @@
+   + cib: Ensure 'cibadmin -R/--replace' commands get replies
+   + cib: Erasing the cib is an admin action, bump the admin_epoch instead
+   + cib: Fix remote cib based on TLS
+-  + cib: Ingore patch failures if we already have their contents
++  + cib: Ignore patch failures if we already have their contents
+   + cib: Validate that everyone still sees the same configuration once all updates have completed
+   + cibadmin: Allow priviliged clients to perform tasks as unpriviliged users
+   + cibadmin: Remove dangerous commands that exposed unnecessary implementation internal details
+@@ -1625,7 +1625,7 @@
+   + Medium: crmd: Clean up and optimize the DC election algorithm
+   + Medium: crmd: Fix memory leak in shutdown
+   + Medium: crmd: Fix memory leaks spotted by Valgrind
+-  + Medium: crmd: Ingore join messages from hosts other than our DC
++  + Medium: crmd: Ignore join messages from hosts other than our DC
+   + Medium: crmd: Limit the scope of resource updates to the status section
+   + Medium: crmd: Prevent the crmd from being respawned if its told to shut down when it did not ask to be
+   + Medium: crmd: Re-check the election status after membership events
+diff --git a/pengine/master.c b/pengine/master.c
+index e0f9208..466ecb8 100644
+--- a/pengine/master.c
++++ b/pengine/master.c
+@@ -475,7 +475,7 @@ master_score(resource_t * rsc, node_t * node, int not_set_value)
+ 
+     if (node == NULL) {
+         if (rsc->fns->state(rsc, TRUE) < RSC_ROLE_STARTED) {
+-            pe_rsc_trace(rsc, "Ingoring master score for %s: unknown state", rsc->id);
++            pe_rsc_trace(rsc, "Ignoring master score for %s: unknown state", rsc->id);
+             return score;
+         }
+ 

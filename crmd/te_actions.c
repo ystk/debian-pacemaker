@@ -52,7 +52,8 @@ te_start_action_timer(crm_graph_t * graph, crm_action_t * action)
 static gboolean
 te_pseudo_action(crm_graph_t * graph, crm_action_t * pseudo)
 {
-    crm_debug("Pseudo action %d fired and confirmed", pseudo->id);
+    crm_debug("Pseudo-action %d (%s) fired and confirmed", pseudo->id,
+              crm_element_value(pseudo->xml, XML_LRM_ATTR_TASK_KEY));
     te_action_confirmed(pseudo);
     update_graph(graph, pseudo);
     trigger_graph();
@@ -65,6 +66,12 @@ send_stonith_update(crm_action_t * action, const char *target, const char *uuid)
     int rc = pcmk_ok;
     crm_node_t *peer = NULL;
 
+    /* We (usually) rely on the membership layer to do node_update_cluster,
+     * and the peer status callback to do node_update_peer, because the node
+     * might have already rejoined before we get the stonith result here.
+     */
+    int flags = node_update_join | node_update_expected;
+
     /* zero out the node-status & remove all LRM status info */
     xmlNode *node_state = NULL;
 
@@ -76,6 +83,14 @@ send_stonith_update(crm_action_t * action, const char *target, const char *uuid)
 
     CRM_CHECK(peer != NULL, return);
 
+    if (peer->state == NULL) {
+        /* Usually, we rely on the membership layer to update the cluster state
+         * in the CIB. However, if the node has never been seen, do it here, so
+         * the node is not considered unclean.
+         */
+        flags |= node_update_cluster;
+    }
+
     if (peer->uuid == NULL) {
         crm_info("Recording uuid '%s' for node '%s'", uuid, target);
         peer->uuid = strdup(uuid);
@@ -83,13 +98,8 @@ send_stonith_update(crm_action_t * action, const char *target, const char *uuid)
 
     crmd_peer_down(peer, TRUE);
 
-    /* Generate a node state update for the CIB.
-     * We rely on the membership layer to do node_update_cluster,
-     * and the peer status callback to do node_update_peer,
-     * because the node might rejoin before we get the stonith result.
-     */
-    node_state = do_update_node_cib(peer, node_update_join|node_update_expected,
-                                    NULL, __FUNCTION__);
+    /* Generate a node state update for the CIB */
+    node_state = do_update_node_cib(peer, flags, NULL, __FUNCTION__);
 
     /* we have to mark whether or not remote nodes have already been fenced */
     if (peer->flags & crm_remote_node) {
@@ -145,8 +155,9 @@ te_fence_node(crm_graph_t * graph, crm_action_t * action)
         return FALSE;
     }
 
-    crm_notice("Executing %s fencing operation (%s) on %s (timeout=%d)",
-               type, id, target, transition_graph->stonith_timeout);
+    crm_notice("Requesting fencing (%s) of node %s "
+               CRM_XS " action=%s timeout=%d",
+               type, target, id, transition_graph->stonith_timeout);
 
     /* Passing NULL means block until we can connect... */
     te_connect_stonith(NULL);
@@ -420,9 +431,9 @@ te_rsc_command(crm_graph_t * graph, crm_action_t * action)
         no_wait = TRUE;
     }
 
-    crm_notice("Initiating action %d: %s %s on %s%s%s",
-               action->id, task, task_uuid, on_node,
-               is_local ? " (local)" : "", no_wait ? " - no waiting" : "");
+    crm_notice("Initiating %s operation %s%s on %s%s "CRM_XS" action %d",
+               task, task_uuid, (is_local? " locally" : ""), on_node,
+               (no_wait? " without waiting" : ""), action->id);
 
     cmd = create_request(CRM_OP_INVOKE_LRM, rsc_op, router_node,
                          CRM_SYSTEM_LRMD, CRM_SYSTEM_TENGINE, NULL);

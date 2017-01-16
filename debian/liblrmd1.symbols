@@ -1,8 +1,8 @@
 liblrmd.so.1 liblrmd1 #MINVER#
 * Build-Depends-Package: liblrmd-dev
- (arch=!powerpc !ppc64 !ppc64el)__start___verbose@Base 1.1.9
- (arch=!powerpc !ppc64 !ppc64el)__stop___verbose@Base 1.1.9
- (arch=!powerpc !ppc64 !ppc64el)lrmd@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__start___verbose@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__stop___verbose@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)lrmd@Base 1.1.9
  lrmd_api_delete@Base 1.1.9
  lrmd_api_new@Base 1.1.9
  lrmd_copy_event@Base 1.1.9
@@ -21,6 +21,8 @@ liblrmd.so.1 liblrmd1 #MINVER#
  lrmd_tls_set_key@Base 1.1.9
  proxy_table@Base 1.1.13
  psk_cred_s@Base 1.1.9
+ remote_proxy_ack_shutdown@Base 1.1.15~rc1
+ remote_proxy_check@Base 1.1.15~rc1
  remote_proxy_end_session@Base 1.1.13
  remote_proxy_free@Base 1.1.13
  remote_proxy_notify_destroy@Base 1.1.13

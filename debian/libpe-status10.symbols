@@ -1,7 +1,7 @@
 libpe_status.so.10 libpe-status10 #MINVER#
 * Build-Depends-Package: libpengine-dev
- (arch=!powerpc !ppc64 !ppc64el)__start___verbose@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)__stop___verbose@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__start___verbose@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__stop___verbose@Base 1.1.14~rc4
  add_hash_param@Base 1.1.14~rc4
  add_node_attrs@Base 1.1.14~rc4
  add_tag_ref@Base 1.1.14~rc4
@@ -58,6 +58,7 @@ libpe_status.so.10 libpe-status10 #MINVER#
  is_container_remote_node@Base 1.1.14~rc4
  is_parent@Base 1.1.14~rc4
  is_remote_node@Base 1.1.14~rc4
+ is_rsc_baremetal_remote_node@Base 1.1.15~rc1
  is_set_recursive@Base 1.1.14~rc4
  master_unpack@Base 1.1.14~rc4
  merge_weights@Base 1.1.14~rc4
@@ -84,12 +85,13 @@ libpe_status.so.10 libpe-status10 #MINVER#
  pe_find_node_any@Base 1.1.14~rc4
  pe_find_node_id@Base 1.1.14~rc4
  pe_find_resource@Base 1.1.14~rc4
+ pe_foreach_guest_node@Base 1.1.15~rc1
  pe_free_action@Base 1.1.14~rc4
  pe_metadata@Base 1.1.14~rc4
  pe_opts@Base 1.1.14~rc4
  pe_pref@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)pe_rules@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)pe_status@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_rules@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_status@Base 1.1.14~rc4
  print_node@Base 1.1.14~rc4
  print_resource@Base 1.1.14~rc4
  print_rscs_brief@Base 1.1.14~rc4

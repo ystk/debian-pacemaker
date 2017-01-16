@@ -1,4 +1,7 @@
+#!/usr/bin/dh-exec
+
 etc/logrotate.d/pacemaker
+mcp/pacemaker.sysconfig => etc/default/pacemaker
 usr/share/pacemaker
 usr/share/snmp/mibs/PCMK-MIB.txt
 var/lib/pacemaker/pengine

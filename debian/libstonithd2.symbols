@@ -1,13 +1,13 @@
 libstonithd.so.2 libstonithd2 #MINVER#
 * Build-Depends-Package: libstonithd-dev
- (arch=!powerpc !ppc64 !ppc64el)__start___verbose@Base 1.1.9
- (arch=!powerpc !ppc64 !ppc64el)__stop___verbose@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__start___verbose@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__stop___verbose@Base 1.1.9
  create_device_registration_xml@Base 1.1.9
  create_level_registration_xml@Base 1.1.9
  get_stonith_provider@Base 1.1.9
  i_hate_pils@Base 1.1.9
  is_redhat_agent@Base 1.1.9
- (arch=!powerpc !ppc64 !ppc64el)stonith@Base 1.1.9
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)stonith@Base 1.1.9
  stonith_action_create@Base 1.1.9
  stonith_action_execute@Base 1.1.9
  stonith_action_execute_async@Base 1.1.9

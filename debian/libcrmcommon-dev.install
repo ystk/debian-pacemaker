@@ -1,5 +1,3 @@
-#!/usr/bin/dh-exec
-
 usr/include/pacemaker/crm/attrd.h
 usr/include/pacemaker/crm/common/ipc.h
 usr/include/pacemaker/crm/common/iso8601.h
@@ -12,7 +10,7 @@ usr/include/pacemaker/crm/crm.h
 usr/include/pacemaker/crm/error.h
 usr/include/pacemaker/crm/msg_xml.h
 usr/include/pacemaker/crm/transition.h
-usr/include/pacemaker/crm_config.h usr/include/${DEB_HOST_MULTIARCH}/pacemaker
+usr/include/pacemaker/crm_config.h
 usr/lib/*/libcrmcommon.so
 usr/lib/*/libtransitioner.so
-usr/lib/*/pkgconfig/pacemaker.pc 
+usr/lib/*/pkgconfig/pacemaker.pc

@@ -21,28 +21,27 @@ override_dh_autoreconf:
 
 override_dh_auto_configure:
 	dh_auto_configure -- --disable-static \
+		--disable-tests \
+		--with-brand=clusterlabs \
+		--with-configdir=/etc/default \
 		--libexecdir=/usr/lib
 # because the daemon executables and Nagios plugins don't need multiarch paths
 
-override_dh_auto_build:
+override_dh_auto_build-indep:
 	dh_auto_build
 	$(MAKE) doxygen
+	# the Doxygen output isn't installed, we can cleanup immediately:
+	rm doc/api/html/*.md5
 
 # make check does not check the compiled software, but rebuilds everything
 # with clang.  This takes a lot of time and does not help us at all.  Skip.
 override_dh_auto_test:
 
 override_dh_install:
-	rm -r	debian/tmp/usr/share/pacemaker/tests \
-		debian/tmp/usr/lib/python2.7/dist-packages/cts \
-		debian/tmp/usr/lib/*/lib*.la \
+	rm -r	debian/tmp/usr/lib/*/lib*.la \
 		debian/tmp/usr/share/doc/pacemaker/COPYING \
-		debian/tmp/usr/share/doc/pacemaker/COPYING.LIB \
-		doc/api/html/*.md5
-	# in absence of systemd the service files aren't installed:
-	rm -f	debian/tmp/lib/systemd/system/crm_mon.service
+		debian/tmp/usr/share/doc/pacemaker/COPYING.LIB
 	dh_install --fail-missing
-	install -D -m 644 mcp/pacemaker.sysconfig debian/pacemaker-common/etc/default/pacemaker
 	debian/check_header_deps pacemaker
 
 override_dh_installchangelogs:
@@ -53,14 +52,10 @@ override_dh_installinit:
 # so we have to force the maintainer script modifications
 	dh_installinit -p pacemaker --onlyscripts
 	dh_installinit -p pacemaker-remote --onlyscripts --name=pacemaker_remote
-# There's no crm_mon init script, just ship our service and default file
-	dh_installinit -p pacemaker-cli-utils --noscripts --name=crm_mon
 	dh_installinit --remaining-packages
 
-# The crm_mon.service usually needs configuration and is not run on each node
-override_dh_systemd_enable:
-	dh_systemd_enable -p pacemaker-cli-utils --no-enable
-	dh_systemd_enable --remaining-packages
+override_dh_strip:
+	dh_strip --dbg-package=pacemaker-dbg
 
 # Play safe
 .DELETE_ON_ERROR:

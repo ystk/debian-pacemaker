@@ -1,0 +1,30 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@niif.hu>
+Date: Thu, 23 Jun 2016 22:36:57 +0200
+Subject: Fix typo: Substraction -> Subtraction
+
+---
+ lib/common/xml.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lib/common/xml.c b/lib/common/xml.c
+index 1c39e5c..9ce4cf3 100644
+--- a/lib/common/xml.c
++++ b/lib/common/xml.c
+@@ -2102,7 +2102,7 @@ xml_apply_patchset_v1(xmlNode *xml, xmlNode *patchset, bool check_version)
+     xmlNode *removed = find_xml_node(patchset, "diff-removed", FALSE);
+     xmlNode *old = copy_xml(xml);
+ 
+-    crm_trace("Substraction Phase");
++    crm_trace("Subtraction Phase");
+     for (child_diff = __xml_first_child(removed); child_diff != NULL;
+          child_diff = __xml_next(child_diff)) {
+         CRM_CHECK(root_nodes_seen == 0, rc = FALSE);
+@@ -4114,7 +4114,7 @@ apply_xml_diff(xmlNode * old, xmlNode * diff, xmlNode ** new)
+                                 crm_trace_nonlog);
+     }
+ 
+-    crm_trace("Substraction Phase");
++    crm_trace("Subtraction Phase");
+     for (child_diff = __xml_first_child(removed); child_diff != NULL;
+          child_diff = __xml_next(child_diff)) {
+         CRM_CHECK(root_nodes_seen == 0, result = FALSE);

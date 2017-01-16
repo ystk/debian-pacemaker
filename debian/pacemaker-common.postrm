@@ -13,6 +13,9 @@ if [ "$1" = purge ]; then
         fi
         rm -rf "$i"
     done
+    # remove the AUTHKEY we created in postinst
+    AUTHKEY=/etc/pacemaker/authkey
+    rm -f $AUTHKEY
 fi
 
 #DEBHELPER#

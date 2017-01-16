@@ -1,0 +1,3 @@
+Depends: pacemaker, pacemaker-cli-utils
+Restrictions: needs-root, allow-stderr, isolation-container
+Tests: pacemaker

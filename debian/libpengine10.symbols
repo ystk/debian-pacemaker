@@ -9,11 +9,12 @@ libpengine.so.10 libpengine10 #MINVER#
  RecurringOp@Base 1.1.14~rc4
  RecurringOp_Stopped@Base 1.1.14~rc4
  Recurring_Stopped@Base 1.1.14~rc4
+ ReloadRsc@Base 1.1.15~rc1
  RoleError@Base 1.1.14~rc4
  StartRsc@Base 1.1.14~rc4
  StopRsc@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)__start___verbose@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)__stop___verbose@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__start___verbose@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)__stop___verbose@Base 1.1.14~rc4
  calculate_utilization@Base 1.1.14~rc4
  can_run_any@Base 1.1.14~rc4
  can_run_resources@Base 1.1.14~rc4
@@ -79,7 +80,7 @@ libpengine.so.10 libpengine10 #MINVER#
  native_update_actions@Base 1.1.14~rc4
  new_rsc_order@Base 1.1.14~rc4
  node_hash_dup@Base 1.1.14~rc4
- (arch=!powerpc !ppc64 !ppc64el)pe_allocate@Base 1.1.14~rc4
+ (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_allocate@Base 1.1.14~rc4
  pe_free_ordering@Base 1.1.14~rc4
  pe_free_rsc_to_node@Base 1.1.14~rc4
  probe_resources@Base 1.1.14~rc4
@@ -91,7 +92,8 @@ libpengine.so.10 libpengine10 #MINVER#
  rsc_colocation_new@Base 1.1.14~rc4
  rsc_known_on@Base 1.1.14~rc4
  rsc_merge_weights@Base 1.1.14~rc4
- rsc_reload@Base 1.1.14~rc4
+# internal function removed by 2558d76
+#MISSING: 1.1.15~rc1# rsc_reload@Base 1.1.14~rc4
  rsc_state_matrix@Base 1.1.14~rc4
  rsc_stonith_ordering@Base 1.1.14~rc4
  rsc_ticket_constraint@Base 1.1.14~rc4

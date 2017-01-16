@@ -1,0 +1,25 @@
+From: Debian HA Maintainers <debian-ha-maintainers@lists.alioth.debian.org>
+Date: Mon, 23 May 2016 11:08:59 +0200
+Subject: path_max
+
+PATH_MAX is undefined on GNU Hurd
+---
+ configure.ac | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/configure.ac b/configure.ac
+index 3c3b91c..554a922 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -687,6 +687,11 @@ AC_CHECK_FUNCS([sched_setscheduler])
+ AC_CHECK_LIB(uuid, uuid_parse)			dnl load the library if necessary
+ AC_CHECK_FUNCS(uuid_unparse)			dnl OSX ships uuid_* as standard functions
+ 
++AC_CHECK_DECL([PATH_MAX], [], [], [#include <limits.h>])
++if test "x${ac_cv_have_decl_PATH_MAX}" = "xno"; then
++   AC_DEFINE_UNQUOTED([PATH_MAX], [4096] , [Define PATH_MAX if not defined])
++fi
++
+ AC_CHECK_HEADERS(uuid/uuid.h)
+ 
+ if test "x$ac_cv_func_uuid_unparse" != xyes; then

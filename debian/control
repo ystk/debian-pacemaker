@@ -3,26 +3,21 @@ Section: admin
 Priority: optional
 Maintainer: Debian HA Maintainers <debian-ha-maintainers@lists.alioth.debian.org>
 Uploaders:
- Martin Loschwitz <madkiss@debian.org>,
- Anibal Monsalve Salazar <anibal@debian.org>,
- Simon Horman <horms@debian.org>,
- Frederik Schüler <fs@debian.org>,
  Richard B Winters <rik@mmogp.com>,
- Ferenc Wágner <wferi@niif.hu>,
+ Ferenc Wágner <wferi@debian.org>,
  Christoph Berg <myon@debian.org>,
+ Adrian Vondendriesch <adrian.vondendriesch@credativ.de>,
 Build-Depends:
- asciidoc,
  cluster-glue-dev,
+# debian/check_header_deps needs:
  dctrl-tools,
  debhelper (>= 9),
  dh-autoreconf,
  dh-exec,
  dh-systemd,
+# resource agent man pages are generated via:
  docbook-xsl,
- doxygen,
- graphviz,
  help2man,
- inkscape,
  libbz2-dev,
  libcfg-dev (>= 1.99),
  libcmap-dev (>= 1.99),
@@ -43,11 +38,17 @@ Build-Depends:
  libxml2-utils,
  libxslt1-dev,
  pkg-config,
- publican,
  systemd [linux-any],
  uuid-dev,
+# detecting docbook-xsl needs:
  xsltproc,
-Standards-Version: 3.9.7
+Build-Depends-Indep:
+ asciidoc,
+ doxygen,
+ graphviz,
+ inkscape,
+ publican,
+Standards-Version: 3.9.8
 Homepage: http://www.clusterlabs.org/
 Vcs-Git: https://alioth.debian.org/anonscm/git/debian-ha/pacemaker.git
 Vcs-Browser: https://anonscm.debian.org/cgit/debian-ha/pacemaker.git
@@ -87,6 +88,9 @@ Package: pacemaker
 Architecture: any
 Depends:
  corosync (>= 1.99),
+ dbus,
+# the init script sources /lib/lsb/init-functions:
+ lsb-base (>= 3.0-6),
  pacemaker-common,
  pacemaker-resource-agents,
  ${misc:Depends},
@@ -115,9 +119,6 @@ Description: cluster resource manager
 Package: pacemaker-cli-utils
 Architecture: any
 Depends:
-# jessie's init-system-helpers starts our disabled crm_mon service on install
-# and upgrade, see #768456.
- init-system-helpers,
  pacemaker | pacemaker-remote,
  ${misc:Depends},
  ${shlibs:Depends},
@@ -134,6 +135,8 @@ Description: cluster resource manager command line utilities
 Package: pacemaker-remote
 Architecture: any
 Depends:
+# the init script sources /lib/lsb/init-functions:
+ lsb-base (>= 3.0-6),
  pacemaker-common,
  pacemaker-resource-agents,
  ${misc:Depends},
@@ -149,11 +152,48 @@ Description: cluster resource manager proxy daemon for remote nodes
  run resources but don't participate in the quorum.  This package is
  mutually exclusive with Pacemaker proper.
 
+Package: pacemaker-dbg
+Architecture: any
+Section: debug
+Priority: extra
+Depends: ${misc:Depends},
+ libcib4 (= ${binary:Version}) |
+ libcrmcluster4 (= ${binary:Version}) |
+ libcrmcommon3 (= ${binary:Version}) |
+ libcrmservice3 (= ${binary:Version}) |
+ liblrmd1 (= ${binary:Version}) |
+ libpe-rules2 (= ${binary:Version}) |
+ libpe-status10 (= ${binary:Version}) |
+ libpengine10 (= ${binary:Version}) |
+ libstonithd2 (= ${binary:Version}) |
+ libtransitioner2 (= ${binary:Version}) |
+ pacemaker (= ${binary:Version}) |
+ pacemaker-cli-utils (= ${binary:Version}) |
+ pacemaker-remote (= ${binary:Version})
+Description: Debugging symbols for Pacemaker
+ High-Availability cluster resource manager for Corosync.
+ .
+ Pacemaker supports a very sophisticated dependency model for
+ n-node clusters and can respond to node and resource-level
+ failures.
+ .
+ Since Corosync handles quorum all on its own, and is RHEL's
+ recommended stack, pacemaker supports the Corosync cluster
+ stack.
+ .
+ This package contains the debugging symbols for Pacemaker.
+
 Package: pacemaker-doc
 Section: doc
 Architecture: all
+Multi-Arch: foreign
 Depends:
  ${misc:Depends},
+# pulled in {acls,crm_fencing}.{txt,html}
+Breaks:
+ pacemaker (<< 1.1.15~rc1-1~),
+Replaces:
+ pacemaker (<< 1.1.15~rc1-1~),
 Description: cluster resource manager HTML documentation
  ${DESCRIPTION}
  This package contains

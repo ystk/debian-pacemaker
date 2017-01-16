@@ -1,0 +1,120 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@debian.org>
+Date: Thu, 29 Sep 2016 10:47:49 +0200
+Subject: Make the testing infrastructure optional
+
+Upstream does not want this option, unfortunately.
+https://github.com/ClusterLabs/pacemaker/pull/1149
+---
+ Makefile.am         | 2 ++
+ configure.ac        | 5 +++++
+ fencing/Makefile.am | 2 ++
+ lrmd/Makefile.am    | 2 ++
+ pengine/Makefile.am | 2 ++
+ tools/Makefile.am   | 2 ++
+ 6 files changed, 15 insertions(+)
+
+diff --git a/Makefile.am b/Makefile.am
+index 3abcafd..d6b09f0 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -30,6 +30,7 @@ doc_DATA = AUTHORS COPYING COPYING.LIB
+ 
+ ACLOCAL_AMFLAGS  = -I m4
+ 
++if ENABLE_TESTS
+ # Test components
+ SUBDIRS	+= cts
+ 
+@@ -41,6 +42,7 @@ test_DATA		= valgrind-pcmk.suppressions
+ noinst_PROGRAMS = scratch
+ nodist_scratch_SOURCES	= scratch.c
+ scratch_LDADD	= $(top_builddir)/lib/common/libcrmcommon.la -lm
++endif
+ 
+ core:
+ 	@echo "Building only core components: $(CORE)"
+diff --git a/configure.ac b/configure.ac
+index 554a922..736e56a 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -329,6 +329,11 @@ AC_ARG_WITH(configdir,
+     [ CONFIGDIR="$withval" ]
+ )
+ 
++AC_ARG_ENABLE([tests],
++    [AS_HELP_STRING([--disable-tests],[don't build and install the testing components])],,
++    [enable_tests=yes])
++AM_CONDITIONAL([ENABLE_TESTS],[test "x$enable_tests" != xno])
++
+ dnl ===============================================
+ dnl General Processing
+ dnl ===============================================
+diff --git a/fencing/Makefile.am b/fencing/Makefile.am
+index 383c217..3d6bc95 100644
+--- a/fencing/Makefile.am
++++ b/fencing/Makefile.am
+@@ -20,8 +20,10 @@ include $(top_srcdir)/Makefile.common
+ SUBDIRS =
+ 
+ ## binary progs
++if ENABLE_TESTS
+ testdir			= $(datadir)/$(PACKAGE)/tests/fencing
+ test_SCRIPTS		= regression.py
++endif
+ 
+ halibdir	= $(CRM_DAEMON_DIR)
+ halib_PROGRAMS	= stonithd stonith-test
+diff --git a/lrmd/Makefile.am b/lrmd/Makefile.am
+index d61a20c..0798278 100644
+--- a/lrmd/Makefile.am
++++ b/lrmd/Makefile.am
+@@ -20,11 +20,13 @@ include $(top_srcdir)/Makefile.common
+ lrmdlibdir	= $(CRM_DAEMON_DIR)
+ lrmdlib_PROGRAMS	= lrmd lrmd_internal_ctl
+ 
++if ENABLE_TESTS
+ # Test components
+ lrmdlib_PROGRAMS	+= lrmd_test
+ 
+ testdir			= $(datadir)/$(PACKAGE)/tests/lrmd
+ test_SCRIPTS		= regression.py
++endif
+ 
+ initdir		 = $(INITDIR)
+ init_SCRIPTS	 = pacemaker_remote
+diff --git a/pengine/Makefile.am b/pengine/Makefile.am
+index 871e2ff..e86ed3e 100644
+--- a/pengine/Makefile.am
++++ b/pengine/Makefile.am
+@@ -21,6 +21,7 @@ AM_CPPFLAGS     += -I$(top_builddir) -I$(top_srcdir)
+ 
+ halibdir	= $(CRM_DAEMON_DIR)
+ 
++if ENABLE_TESTS
+ PE_TESTS	= $(wildcard test10/*.scores)
+ 
+ testdir			= $(datadir)/$(PACKAGE)/tests/pengine
+@@ -29,6 +30,7 @@ test_DATA		= regression.core.sh
+ 
+ test10dir		= $(datadir)/$(PACKAGE)/tests/pengine/test10
+ test10_DATA		= $(PE_TESTS) $(PE_TESTS:%.scores=%.xml) $(PE_TESTS:%.scores=%.exp) $(PE_TESTS:%.scores=%.dot) $(PE_TESTS:%.scores=%.summary) $(wildcard test10/*.stderr)
++endif
+ 
+ beekhof:
+ 	echo $(shell ls -1 test10/*.xml)
+diff --git a/tools/Makefile.am b/tools/Makefile.am
+index 555b1db..ba22cb6 100644
+--- a/tools/Makefile.am
++++ b/tools/Makefile.am
+@@ -41,9 +41,11 @@ EXTRA_DIST		= $(sbin_SCRIPTS)
+ sbin_PROGRAMS		= crm_simulate crmadmin cibadmin crm_node crm_attribute crm_resource crm_verify \
+ 			 crm_shadow attrd_updater crm_diff crm_mon iso8601 crm_ticket crm_error
+ 
++if ENABLE_TESTS
+ testdir			= $(datadir)/$(PACKAGE)/tests/cli
+ test_SCRIPTS		= regression.sh
+ test_DATA               = regression.dates.exp regression.tools.exp regression.acls.exp 
++endif
+ 
+ if BUILD_HEARTBEAT_SUPPORT
+ sbin_PROGRAMS           += crm_uuid

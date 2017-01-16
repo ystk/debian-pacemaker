@@ -1,2 +1,0 @@
-# Options passed to crm_mon
-OPTIONS="--disable-ncurses --mail-to=root"

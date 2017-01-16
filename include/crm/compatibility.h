@@ -2,7 +2,7 @@
  * Copyright (C) 2012 Andrew Beekhof <andrew@beekhof.net>
  *
  * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2 of the License, or (at your option) any later version.
  *
@@ -11,7 +11,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public
+ * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
@@ -161,7 +161,7 @@ slist_basic_destroy(GListPtr list)
 #  define crm_free(free_obj) do { free(free_obj); free_obj=NULL; } while(0)
 
 /* These two child iterator macros are no longer to be used
- * They exist for compatability reasons and will be removed in a
+ * They exist for compatibility reasons and will be removed in a
  * future release
  */
 #  define xml_child_iter(parent, child, code) do {			\
@@ -227,7 +227,7 @@ slist_basic_destroy(GListPtr list)
 
 #  define zap_xml_from_parent(parent, xml_obj) free_xml(xml_obj); xml_obj = NULL
 
-/* For ABI compatability with version < 1.1.4 */
+/* For ABI compatibility with version < 1.1.4 */
 static inline char *
 calculate_xml_digest(xmlNode * input, gboolean sort, gboolean do_filter)
 {
@@ -265,14 +265,14 @@ attrd_update(crm_ipc_t * cluster, char command, const char *host, const char *na
              const char *value, const char *section, const char *set, const char *dampen)
 {
     return attrd_update_delegate(cluster, command, host, name, value, section, set, dampen,
-                                 NULL, FALSE) > 0;
+                                 NULL, attrd_opt_none) > 0;
 }
 
 static inline gboolean
 attrd_lazy_update(char command, const char *host, const char *name,
                   const char *value, const char *section, const char *set, const char *dampen)
 {
-    return attrd_update_delegate(NULL, command, host, name, value, section, set, dampen, NULL, FALSE) > 0;
+    return attrd_update_delegate(NULL, command, host, name, value, section, set, dampen, NULL, attrd_opt_none) > 0;
 }
 
 static inline gboolean
@@ -280,7 +280,7 @@ attrd_update_no_mainloop(int *connection, char command, const char *host,
                          const char *name, const char *value, const char *section,
                          const char *set, const char *dampen)
 {
-    return attrd_update_delegate(NULL, command, host, name, value, section, set, dampen, NULL, FALSE) > 0;
+    return attrd_update_delegate(NULL, command, host, name, value, section, set, dampen, NULL, attrd_opt_none) > 0;
 }
 #  endif
 
