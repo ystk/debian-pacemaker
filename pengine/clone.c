@@ -927,9 +927,11 @@ clone_internal_constraints(resource_t * rsc, pe_working_set_t * data_set)
     }
 }
 
-static void
+static bool
 assign_node(resource_t * rsc, node_t * node, gboolean force)
 {
+    bool changed = FALSE;
+
     if (rsc->children) {
 
         GListPtr gIter = rsc->children;
@@ -937,12 +939,17 @@ assign_node(resource_t * rsc, node_t * node, gboolean force)
         for (; gIter != NULL; gIter = gIter->next) {
             resource_t *child_rsc = (resource_t *) gIter->data;
 
-            native_assign_node(child_rsc, NULL, node, force);
+            changed |= native_assign_node(child_rsc, NULL, node, force);
         }
 
-        return;
+        return changed;
     }
+    if (rsc->allocated_to != NULL) {
+        changed = true;
+    }
+
     native_assign_node(rsc, NULL, node, force);
+    return changed;
 }
 
 static resource_t *
@@ -1193,7 +1200,7 @@ clone_action_flags(action_t * action, node_t * node)
 
             if (is_set(flags, pe_action_optional)
                 && is_set(child_flags, pe_action_optional) == FALSE) {
-                pe_rsc_trace(child, "%s is manditory because of %s", action->uuid,
+                pe_rsc_trace(child, "%s is mandatory because of %s", action->uuid,
                              child_action->uuid);
                 flags = crm_clear_bit(__FUNCTION__, action->rsc->id, flags, pe_action_optional);
                 pe_clear_action_bit(action, pe_action_optional);
@@ -1264,8 +1271,9 @@ clone_update_actions_interleave(action_t * first, action_t * then, node_t * node
              */
             if (type & (pe_order_runnable_left | pe_order_implies_then) /* Mandatory */ ) {
                 pe_rsc_info(then->rsc, "Inhibiting %s from being active", then_child->id);
-                assign_node(then_child, NULL, TRUE);
-                /* TODO - set changed correctly? */
+                if(assign_node(then_child, NULL, TRUE)) {
+                    changed |= pe_graph_updated_then;
+                }
             }
 
         } else {
@@ -1277,19 +1285,37 @@ clone_update_actions_interleave(action_t * first, action_t * then, node_t * node
             first_action = find_first_action(first_child->actions, NULL, first_task, node);
             then_action = find_first_action(then_child->actions, NULL, then->task, node);
 
-            CRM_CHECK(first_action != NULL || is_set(first_child->flags, pe_rsc_orphan),
-                      crm_err("No action found for %s in %s (first)", first_task, first_child->id));
+            if (first_action == NULL) {
+                if (is_not_set(first_child->flags, pe_rsc_orphan)
+                    && crm_str_eq(first_task, RSC_STOP, TRUE) == FALSE
+                    && crm_str_eq(first_task, RSC_DEMOTE, TRUE) == FALSE) {
+                    crm_err("Internal error: No action found for %s in %s (first)",
+                            first_task, first_child->id);
 
-            if (then_action == NULL && is_not_set(then_child->flags, pe_rsc_orphan)
-                && crm_str_eq(then->task, RSC_STOP, TRUE) == FALSE
-                && crm_str_eq(then->task, RSC_DEMOTED, TRUE) == FALSE) {
-                crm_err("Internal error: No action found for %s in %s (then)", then->task,
-                        then_child->id);
-            }
-
-            if (first_action == NULL || then_action == NULL) {
+                } else {
+                    crm_trace("No action found for %s in %s%s (first)",
+                              first_task, first_child->id,
+                              is_set(first_child->flags, pe_rsc_orphan) ? " (ORPHAN)" : "");
+                }
                 continue;
             }
+
+            /* We're only interested if 'then' is neither stopping nor being demoted */ 
+            if (then_action == NULL) {
+                if (is_not_set(then_child->flags, pe_rsc_orphan)
+                    && crm_str_eq(then->task, RSC_STOP, TRUE) == FALSE
+                    && crm_str_eq(then->task, RSC_DEMOTE, TRUE) == FALSE) {
+                    crm_err("Internal error: No action found for %s in %s (then)",
+                            then->task, then_child->id);
+
+                } else {
+                    crm_trace("No action found for %s in %s%s (then)",
+                              then->task, then_child->id,
+                              is_set(then_child->flags, pe_rsc_orphan) ? " (ORPHAN)" : "");
+                }
+                continue;
+            }
+
             if (order_actions(first_action, then_action, type)) {
                 crm_debug("Created constraint for %s -> %s", first_action->uuid, then_action->uuid);
                 changed |= (pe_graph_updated_first | pe_graph_updated_then);

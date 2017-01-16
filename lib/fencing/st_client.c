@@ -737,7 +737,7 @@ read_output(int fd)
         more = read(fd, buffer, READ_MAX - 1);
 
         if (more > 0) {
-            buffer[more] = 0; /* Make sure its nul-terminated for logging
+            buffer[more] = 0; /* Make sure it's nul-terminated for logging
                               * 'more' is always less than our buffer size
                               */
             output = realloc_safe(output, len + more + 1);
@@ -839,7 +839,7 @@ stonith_action_async_done(mainloop_child_t * p, pid_t pid, int core, int signo, 
 static int
 internal_stonith_action_execute(stonith_action_t * action)
 {
-    int pid, status, len, rc = -EPROTO;
+    int pid, status = 0, len, rc = -EPROTO;
     int ret;
     int total = 0;
     int p_read_fd, p_write_fd;  /* parent read/write file descriptors */
@@ -1035,8 +1035,8 @@ internal_stonith_action_execute(stonith_action_t * action)
                     WTERMSIG(status));
 
         } else {
-            crm_err("call %s for %s exited abnormally. stopped=%d, continued=%d",
-                    action->action, action->agent, WIFSTOPPED(status), WIFCONTINUED(status));
+            crm_err("call %s for %s returned unexpected status %#x",
+                    action->action, action->agent, status);
         }
     }
 
@@ -2308,7 +2308,7 @@ stonith_send_command(stonith_t * stonith, const char *op, xmlNode * data, xmlNod
     crm_element_value_int(op_reply, F_STONITH_CALLID, &reply_id);
 
     if (reply_id == stonith->call_id) {
-        crm_trace("Syncronous reply %d received", reply_id);
+        crm_trace("Synchronous reply %d received", reply_id);
 
         if (crm_element_value_int(op_reply, F_STONITH_RC, &rc) != 0) {
             rc = -ENOMSG;

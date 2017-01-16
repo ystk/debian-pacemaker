@@ -24,7 +24,7 @@ PACKAGE		?= pacemaker
 
 # Force 'make dist' to be consistent with 'make export'
 distdir			= $(PACKAGE)-$(TAG)
-TARFILE			= $(distdir).tar.gz
+TARFILE			= $(PACKAGE)-$(SHORTTAG).tar.gz
 DIST_ARCHIVES		= $(TARFILE)
 
 RPM_ROOT	= $(shell pwd)
@@ -43,12 +43,23 @@ F       ?= $(shell test ! -e /etc/fedora-release && echo 0; test -e /etc/fedora-
 ARCH    ?= $(shell test -e /etc/fedora-release && rpm --eval %{_arch})
 MOCK_CFG ?= $(shell test -e /etc/fedora-release && echo fedora-$(F)-$(ARCH))
 DISTRO  ?= $(shell test -e /etc/SuSE-release && echo suse; echo fedora)
-TAG     ?= $(shell git log --pretty="format:%H" -n 1)
+COMMIT  ?= HEAD
+TAG     ?= $(shell T=$$(git describe --all "$(COMMIT)" | sed -n 's|tags/\(.*\)|\1|p'); \
+	     test -n "$${T}" && echo "$${T}" \
+	       || git log --pretty="format:%H" -n 1 "$(COMMIT)")
+lparen = (
+rparen = )
+SHORTTAG ?= $(shell case $(TAG) in Pacemaker-*$(rparen) echo $(TAG) | cut -c11-;; \
+	      *$(rparen) git log --pretty="format:%h" -n 1 "$(TAG)";; esac)
 WITH    ?= --without doc
 #WITH    ?= --without=doc --with=gcov
 
 LAST_RC		?= $(shell test -e /Volumes || git tag -l | grep Pacemaker | sort -Vr | grep rc | head -n 1)
-LAST_RELEASE	?= $(shell test -e /Volumes || git tag -l | grep Pacemaker | sort -Vr | grep -v rc | head -n 1)
+ifneq ($(origin VERSION), undefined)
+LAST_RELEASE	?= Pacemaker-$(VERSION)
+else
+LAST_RELEASE	?= $(shell git tag -l | grep Pacemaker | sort -Vr | grep -v rc | head -n 1)
+endif
 NEXT_RELEASE	?= $(shell echo $(LAST_RELEASE) | awk -F. '/[0-9]+\./{$$3+=1;OFS=".";print $$1,$$2,$$3}')
 
 BUILD_COUNTER	?= build.counter
@@ -56,6 +67,48 @@ LAST_COUNT      = $(shell test ! -e $(BUILD_COUNTER) && echo 0; test -e $(BUILD_
 COUNT           = $(shell expr 1 + $(LAST_COUNT))
 
 SPECVERSION	?= $(COUNT)
+
+# rpmbuild wrapper that translates "--with[out] FEATURE" into RPM macros
+#
+# Unfortunately, at least recent versions of rpm do no support mentioned
+# switch.  To work this around, we can emulate mechanism that rpm uses
+# internally: unfold the flags into respective macro definitions:
+#
+#    --with[out] FOO  ->  --define "_with[out]_FOO --with[out]-FOO"
+#
+# $(1) ... WITH string (e.g., --with pre_release --without cman)
+# $(2) ... options following the initial "rpmbuild" in the command
+# $(3) ... final arguments determined with $2 (e.g., pacemaker.spec)
+#
+# Note that if $(3) is a specfile, extra case is taken so as to reflect
+# pcmkversion correctly (using in-place modification).
+#
+# Also note that both ways to specify long option with an argument
+# (i.e., what getopt and, importantly, rpm itself support) can be used:
+#
+#    --with FOO
+#    --with=FOO
+rpmbuild-with = \
+	WITH=$$(getopt -o "" -l with:,without: -- $(1)) || exit 1; \
+	CMD='rpmbuild $(2)'; PREREL=0; \
+	eval set -- "$${WITH}"; \
+	while true; do \
+		case "$$1" in \
+		--with) CMD="$${CMD} --define \"_with_$$2 --with-$$2\""; shift 2; \
+			[ "$$2" != pre_release ] || PREREL=1;; \
+		--without) CMD="$${CMD} --define \"_without_$$2 --without-$$2\""; shift 2; \
+		        [ "$$2" != pre_release ] || PREREL=0;; \
+		--) shift ; break ;; \
+		*) echo "cannot parse WITH: $$1"; exit 1;; \
+		esac; \
+	done; \
+	case "$(3)" in \
+	*.spec) [ $${PREREL} -eq 0 ] \
+		&& sed -i "s/^\(%global pcmkversion \).*/\1$$(echo $(LAST_RELEASE) | sed -e s:Pacemaker-:: -e s:-.*::)/" $(3) \
+		|| sed -i "s/^\(%global pcmkversion \).*/\1$$(echo $(NEXT_RELEASE) | sed -e s:Pacemaker-:: -e s:-.*::)/" $(3);; \
+	esac; \
+	CMD="$${CMD} $(3)"; \
+	eval "$${CMD}"
 
 init:
 	./autogen.sh init
@@ -137,8 +190,6 @@ $(PACKAGE)-%.spec: $(PACKAGE).spec.in
 	    echo "Rebuilt $@ from $(TAG)";					\
 	fi
 
-# rpmbuild apparently temporarily lost the ability to use --with arguments at some point
-# Compensate by tweaking the format for pcmk_release here
 srpm-%:	export $(PACKAGE)-%.spec
 	rm -f *.src.rpm
 	cp $(PACKAGE)-$*.spec $(PACKAGE).spec
@@ -149,14 +200,8 @@ srpm-%:	export $(PACKAGE)-%.spec
 	fi
 	sed -i 's/global\ specversion.*/global\ specversion\ $(SPECVERSION)/' $(PACKAGE).spec
 	sed -i 's/global\ commit.*/global\ commit\ $(TAG)/' $(PACKAGE).spec
-	case "$(WITH)" in 	\
-	  *pre_release*)	\
-	    sed -i 's/global\ pcmk_release.*/global\ pcmk_release\ 0.%{specversion}.%{shortcommit}.git/' $(PACKAGE).spec;	\
-	    sed -i 's/Version:.*/Version:\ $(shell echo $(NEXT_RELEASE) | sed -e s:Pacemaker-:: -e s:-.*::)/' $(PACKAGE).spec;;	\
-	  *)			\
-	    sed -i 's/Version:.*/Version:\ $(shell git describe --tags $(TAG) | sed -e s:Pacemaker-:: -e s:-.*::)/' $(PACKAGE).spec;;\
-	esac
-	rpmbuild -bs --define "dist .$*" $(RPM_OPTS) $(PACKAGE).spec
+	@WITH=$$(getopt -o "" -l with:,without: -n '$@' -- $(WITH)) || exit 1; \
+	$(call rpmbuild-with,$(WITH),-bs --define "dist .$*" $(RPM_OPTS),$(PACKAGE).spec)
 
 chroot: mock-$(MOCK_CFG) mock-install-$(MOCK_CFG) mock-sh-$(MOCK_CFG)
 	echo "Done"
@@ -211,7 +256,7 @@ rpm-dep: $(PACKAGE)-$(DISTRO).spec
 
 rpm:	srpm
 	@echo To create custom builds, edit the flags and options in $(PACKAGE).spec first
-	rpmbuild $(RPM_OPTS) $(WITH) --rebuild $(RPM_ROOT)/*.src.rpm
+	$(call rpmbuild-with,$(WITH),$(RPM_OPTS),--rebuild $(RPM_ROOT)/*.src.rpm)
 
 release:
 	make TAG=$(LAST_RELEASE) rpm

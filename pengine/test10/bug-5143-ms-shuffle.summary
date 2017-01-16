@@ -1,3 +1,4 @@
+2 of 34 resources DISABLED and 0 BLOCKED from being started due to failures
 
 Current cluster status:
 Online: [ hex-1 hex-2 hex-3 ]
@@ -23,7 +24,7 @@ Online: [ hex-1 hex-2 hex-3 ]
  dummy5	(ocf::heartbeat:Delay):	Started hex-1 
  dummy6	(ocf::heartbeat:Delay):	Started hex-2 
  Resource Group: r0-group
-     fs-r0	(ocf::heartbeat:Filesystem):	(target-role:Stopped) Stopped 
+     fs-r0	(ocf::heartbeat:Filesystem):	Stopped ( disabled ) 
      dummy2	(ocf::heartbeat:Delay):	Stopped 
 
 Transition Summary:
@@ -69,6 +70,6 @@ Online: [ hex-1 hex-2 hex-3 ]
  dummy5	(ocf::heartbeat:Delay):	Started hex-1 
  dummy6	(ocf::heartbeat:Delay):	Started hex-2 
  Resource Group: r0-group
-     fs-r0	(ocf::heartbeat:Filesystem):	(target-role:Stopped) Stopped 
+     fs-r0	(ocf::heartbeat:Filesystem):	Stopped ( disabled ) 
      dummy2	(ocf::heartbeat:Delay):	Stopped 
 

@@ -45,7 +45,8 @@ crm_update_peer_join(const char *source, crm_node_t * node, enum crm_join_phase 
     enum crm_join_phase last = 0;
 
     if(node == NULL) {
-        crm_err("%s: Could not set join-%u to %d for NULL", source, current_join_id, phase);
+        crm_err("Could not update join because node not specified" CRM_XS
+                " join-%u source=%s phase=%d", source, current_join_id, phase);
         return;
     }
 
@@ -70,8 +71,9 @@ crm_update_peer_join(const char *source, crm_node_t * node, enum crm_join_phase 
         crm_info("%s: Node %s[%u] - join-%u phase %u -> %u",
                  source, node->uname, node->id, current_join_id, last, phase);
     } else {
-        crm_err("%s: Node %s[%u] - join-%u phase cannot transition from %u to %u",
-                source, node->uname, node->id, current_join_id, last, phase);
+        crm_err("Could not update join for node %s because phase transition invalid "
+                CRM_XS " join-%u source=%s node_id=%u last=%u new=%u",
+                node->uname, current_join_id, source, node->id, last, phase);
 
     }
 }
@@ -167,7 +169,7 @@ do_dc_join_offer_all(long long action,
                      enum crmd_fsa_state cur_state,
                      enum crmd_fsa_input current_input, fsa_data_t * msg_data)
 {
-    /* reset everyones status back to down or in_ccm in the CIB
+    /* reset everyone's status back to down or in_ccm in the CIB
      *
      * any nodes that are active in the CIB but not in the CCM list
      *   will be seen as offline by the PE anyway
@@ -182,7 +184,7 @@ do_dc_join_offer_all(long long action,
     }
     g_hash_table_foreach(crm_peer_cache, join_make_offer, NULL);
 
-    /* dont waste time by invoking the PE yet; */
+    /* don't waste time by invoking the PE yet; */
     crm_info("join-%d: Waiting on %d outstanding join acks",
              current_join_id, crmd_join_phase_count(crm_join_welcomed));
 }
@@ -249,7 +251,7 @@ do_dc_join_offer_one(long long action,
      */
     abort_transition(INFINITY, tg_restart, "Node join", NULL);
 
-    /* dont waste time by invoking the pe yet; */
+    /* don't waste time by invoking the pe yet; */
     crm_debug("Waiting on %d outstanding join acks for join-%d",
               crmd_join_phase_count(crm_join_welcomed), current_join_id);
 }
@@ -349,7 +351,8 @@ do_dc_join_filter_offer(long long action,
         /* NACK this client */
         ack_nack = CRMD_JOINSTATE_NACK;
         crm_update_peer_join(__FUNCTION__, join_node, crm_join_nack);
-        crm_err("join-%d: NACK'ing node %s (ref %s)", join_id, join_from, ref);
+        crm_err("Rejecting cluster join request from %s " CRM_XS
+                " NACK join-%d ref=%s", join_from, join_id, ref);
 
     } else {
         crm_debug("join-%d: Welcoming node %s (ref %s)", join_id, join_from, ref);
@@ -363,7 +366,7 @@ do_dc_join_filter_offer(long long action,
 
 
     if (check_join_state(cur_state, __FUNCTION__) == FALSE) {
-        /* dont waste time by invoking the PE yet; */
+        /* don't waste time by invoking the PE yet; */
         crm_debug("join-%d: Still waiting on %d outstanding offers",
                   join_id, crmd_join_phase_count(crm_join_welcomed));
     }
@@ -403,8 +406,8 @@ do_dc_join_finalize(long long action,
     }
 
     if (is_set(fsa_input_register, R_IN_TRANSITION)) {
-        crm_warn("join-%d: We are still in a transition."
-                 "  Delaying until the TE completes.", current_join_id);
+        crm_warn("Delaying response to cluster join offer while transition in progress "
+                 CRM_XS " join-%d", current_join_id);
         crmd_fsa_stall(FALSE);
         return;
     }
@@ -413,8 +416,8 @@ do_dc_join_finalize(long long action,
         /* ask for the agreed best CIB */
         sync_from = strdup(max_generation_from);
         set_bit(fsa_input_register, R_CIB_ASKED);
-        crm_notice("join-%d: Syncing the CIB from %s to the rest of the cluster",
-                   current_join_id, sync_from);
+        crm_notice("Syncing the Cluster Information Base from %s to rest of cluster "
+                   CRM_XS " join-%d", sync_from, current_join_id);
         crm_log_xml_notice(max_generation_xml, "Requested version");
 
     } else {
@@ -516,7 +519,7 @@ do_dc_join_ack(long long action,
              join_id, CRMD_JOINSTATE_MEMBER, join_from);
 
     /* update CIB with the current LRM status from the node
-     * We dont need to notify the TE of these updates, a transition will
+     * We don't need to notify the TE of these updates, a transition will
      *   be started in due time
      */
     erase_status_tag(join_from, XML_CIB_TAG_LRM, cib_scope_local);

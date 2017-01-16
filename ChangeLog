@@ -1,3 +1,52 @@
+* Tue Jun 21 2016 Ken Gaillot <kgaillot@redhat.com> Pacemaker-1.1.15-1
+- Update source tarball to revision: 32fa6a5
+- Changesets: 533
+- Diff:       219 files changed, 6659 insertions(+), 3989 deletions(-)
+
+- Features added since Pacemaker-1.1.14
+  + Event-driven alerts allow scripts to be called after significant events
+  + build: Some files moved from pacemaker package to pacemaker-cli for cleaner pacemaker-remote dependencies
+  + build: ./configure --with-configdir argument for /etc/sysconfig, /etc/default, etc.
+  + fencing: Simplify watchdog integration
+  + fencing: Support concurrent fencing actions via new pcmk_action_limit option
+  + remote: pacemaker_remote may be stopped without disabling resource first
+  + remote: Report integration status of Pacemaker Remote nodes in CIB node_state
+  + tools: crm_mon now reports why resources are not starting
+  + tools: crm_report now obscures passwords in logfiles
+  + tools: attrd_updater --update-both/--update-delay options allow changing dampening value
+  + tools: allow stonith_admin -H '*' to show history for all nodes
+
+- Changes since Pacemaker-1.1.14
+  + Fix multiple memory issues (leaks, use-after-free) in daemons, libraries and tools
+  + Make various log messages more user-friendly
+  + Improve FreeBSD and Hurd support
+  + attrd: Prevent possible segfault on exit
+  + cib: Fix regression to restore support for compressed CIB larger than 1MB
+  + common: fix regression in 1.1.14 that made have-watchdog always true
+  + controld: handle DLM "wait fencing" state better
+  + crmd: Fix regression so that fenced unseen nodes do not remain unclean
+  + crmd: Take start-delay into account when calculation action timeouts
+  + crmd: Avoid timeout on older peers when cancelling a resource operation
+  + fencing: Allow fencing by node ID (e.g. by DLM) even if node left cluster
+  + lrmd: Fix potential issues when cluster is stopped via systemd shutdown
+  + pacemakerd: Properly respawn stonithd if it fails
+  + pengine: Fix regression with multiple monitor levels that could ignore failure
+  + pengine: Correctly set OCF_RESKEY_CRM_meta_timeout when start-delay is configured
+  + pengine: Properly order actions for master/slave resources in anti-colocations
+  + pengine: Respect asymmetrical ordering when trying to move resources
+  + pengine: Properly order stop actions on guest node relative to host stonith
+  + pengine: Correctly block actions dependent on unrunnable clones
+  + remote: Allow remote nodes to have node attributes even with legacy attrd
+  + remote: Recover from remote node fencing more quickly
+  + remote: Place resources on newly rejoined remote nodes more quickly
+  + resources: ping agent can now use fping6 for IPv6 hosts
+  + resources: SysInfo now resets #health_disk to green when there's sufficient free disk
+  + tools: crm_report is now more efficient and handles Pacemaker Remote nodes better
+  + tools: Prevent crm_resource segfault when --resource is not supplied with --restart
+  + tools: crm_shadow --display option now works
+  + tools: crm_resource --restart handles groups, target-roles and moving resources better
+
+
 * Thu Jan 14 2016 Ken Gaillot <kgaillot@redhat.com> Pacemaker-1.1.14-1
 - Update source tarball to revision: f0b585a
 - Changesets: 724
@@ -76,7 +125,7 @@
   + Allow fail-counts to be removed en-mass when the new attrd is in operation
   + attrd supports private attributes (not written to CIB)
   + crmd: Ensure a watchdog device is in use if stonith-watchdog-timeout is configured
-  + crmd: If configured, trigger the watchdog immediately if we loose quorum and no-quorum-policy=suicide
+  + crmd: If configured, trigger the watchdog immediately if we lose quorum and no-quorum-policy=suicide
   + crm_diff: Support generating a difference without versions details if --no-version/-u is supplied
   + crm_resource: Implement an intelligent restart capability
   + Fencing: Advertise the watchdog device for fencing operations
@@ -1231,7 +1280,7 @@
   + crmd: Bug lf#2379 - Ensure the cluster terminates when the PE is not available
   + crmd: Do not allow the target_rc to be misused by resource agents
   + crmd: Do not ignore action timeouts based on FSA state
-  + crmd: Ensure we dont get stuck in S_PENDING if we loose an election to someone that never talks to us again
+  + crmd: Ensure we don't get stuck in S_PENDING if we lose an election to someone that never talks to us again
   + crmd: Fix memory leaks exposed by valgrind
   + crmd: Remove race condition that could lead to multiple instances of a clone being active on a machine
   + crmd: Send erase_status_tag() calls to the local CIB when the DC is fenced, since there is no DC to accept them
@@ -1347,7 +1396,7 @@
   + pengine: Make sure promote/demote pseudo actions are created correctly
   + pengine: Prevent target-role from promoting more than master-max instances
   + ais: Bug lf#2199 - Prevent expected-quorum-votes from being populated with garbage
-  + ais: Prevent deadlock - dont try to release IPC message if the connection failed
+  + ais: Prevent deadlock - don't try to release IPC message if the connection failed
   + cib: For validation errors, send back the full CIB so the client can display the errors
   + cib: Prevent use-after-free for remote plaintext connections
   + crmd: Bug lf#2201 - Prevent use-of-NULL when running heartbeat
@@ -1454,7 +1503,7 @@
   + crmd: Bug lf#2120 - All transient node attribute updates need to go via attrd
   + crmd: Correctly calculate how long an FSA action took to avoid spamming the logs with errors
   + crmd: Fix another large memory leak affecting Heartbeat based clusters
-  + lha: Restore compatability with older versions
+  + lha: Restore compatibility with older versions
   + pengine: Bug bnc#495687 - Filesystem is not notified of successful STONITH under some conditions
   + pengine: Make running a cluster with STONITH enabled but no STONITH resources an error and provide details on resolutions
   + pengine: Prevent use-ofNULL when using resource ordering sets
@@ -1511,7 +1560,7 @@
   + crmd: Avoid a race condition by waiting for the attrd update to trigger a transition automatically
   + crmd: Bug bnc#480977 - Prevent extra, partial, shutdown when a node restarts too quickly
   + crmd: Bug bnc#480977 - Prevent extra, partial, shutdown when a node restarts too quickly (verified)
-  + crmd: Bug bnc#489063 - Ensure the DC is always unset after we 'loose' an election
+  + crmd: Bug bnc#489063 - Ensure the DC is always unset after we 'lose' an election
   + crmd: Bug BSC#479543 - Correctly find the migration source for timed out migrate_from actions
   + crmd: Call crm_peer_init() before we start the FSA - prevents a race condition when used with Heartbeat
   + crmd: Erasing the status section should not be forced to the local node
@@ -1645,7 +1694,7 @@
   + crmd: If there are no nodes to finalize, start an election.
   + crmd: If there are no nodes to welcome, start an election.
   + crmd: Prevent node attribute loss by detecting attrd disconnections immediately
-  + crmd: Prevent node re-probe loops by ensuring manditory actions always complete
+  + crmd: Prevent node re-probe loops by ensuring mandatory actions always complete
   + pengine: Bug 2005 - Fix startup ordering of cloned stonith groups
   + pengine: Bug 2006 - Correctly reprobe cloned groups
   + pengine: Bug BNC:465484 - Fix the no-quorum-policy=suicide option
@@ -2029,7 +2078,7 @@
   + Core: XML memory corruption - catch, and handle, cases where we are overwriting an attribute value with itself
   + Core: The xml ID type does not allow UUIDs that start with a number
   + Core: Implement XPath based versions of query/delete/replace/modify
-  + Core: Remove some HA2.0.(3,4) compatability code
+  + Core: Remove some HA2.0.(3,4) compatibility code
   + crmd: Overhaul the detection of nodes that are starting vs. failed
   + pengine: Bug LF:1459 - Allow failures to expire
   + pengine: Have the PE do non-persistent configuration upgrades before performing calculations
@@ -2092,7 +2141,7 @@
   + cib: Correctly detect configuration changes - num_updates does not count
   + pengine: Apply stickiness values to the whole group, not the individual resources
   + pengine: Bug N:385265 - Ensure groups are migrated instead of remaining partially active on the current node
-  + pengine: Bug N:396293 - Enforce manditory group restarts due to ordering constraints
+  + pengine: Bug N:396293 - Enforce mandatory group restarts due to ordering constraints
   + pengine: Correctly recover master instances found active on more than one node
   + pengine: Fix memory leaks reported by Valgrind
   + Medium: Admin: crm_mon - Misc improvements from Satomi Taniguchi
@@ -2157,10 +2206,10 @@
   + Medium: Build: Re-instate a better default for LCRSODIR
   + Medium: CIB: Bug LF-1861 - Filter irrelvant error status from synchronous CIB clients
   + Medium: Core: Bug 1849 - Invalid conversion of ordinal leap year to gregorian date
-  + Medium: Core: Drop compataibility code for 2.0.4 and 2.0.5 clusters
+  + Medium: Core: Drop compatibility code for 2.0.4 and 2.0.5 clusters
   + Medium: crmd: Bug LF-1860 - Automatically cancel recurring ops before demote and promote operations (not only stops)
   + Medium: crmd: Save the current CIB contents if we detect the PE crashed
-  + Medium: pengine: Bug LF:1866 - Fix version check when applying compatability handling for failed start operations
+  + Medium: pengine: Bug LF:1866 - Fix version check when applying compatibility handling for failed start operations
   + Medium: pengine: Bug LF:1866 - Restore the ability to have start failures not be fatal
   + Medium: pengine: Bug PM1 - Failcount applies to all instances of non-unique clone
   + Medium: pengine: Correctly set the state of partially active master/slave groups

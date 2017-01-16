@@ -106,7 +106,7 @@ init_remote_listener(int port, gboolean encrypted)
     };
 
     if (port <= 0) {
-        /* dont start it */
+        /* don't start it */
         return 0;
     }
 
@@ -436,7 +436,7 @@ cib_handle_remote_msg(crm_client_t * client, xmlNode * command)
         value = crm_element_value(command, F_CIB_CALLBACK_TOKEN);
         if (value != NULL) {
             client->userdata = strdup(value);
-            crm_trace("Callback channel for %s is %s", client->id, client->userdata);
+            crm_trace("Callback channel for %s is %s", client->id, (char*)client->userdata);
 
         } else {
             client->userdata = strdup(client->id);

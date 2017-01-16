@@ -721,7 +721,7 @@ crm_log_preinit(const char *entity, int argc, char **argv)
         qb_log_init(crm_system_name, qb_facility, LOG_ERR);
         crm_log_level = LOG_CRIT;
 
-        /* Nuke any syslog activity until its asked for */
+        /* Nuke any syslog activity until it's asked for */
         qb_log_ctl(QB_LOG_SYSLOG, QB_LOG_CONF_ENABLED, QB_FALSE);
 
         /* Set format strings */
@@ -844,7 +844,7 @@ crm_log_init(const char *entity, uint8_t level, gboolean daemon, gboolean to_std
             crm_perror(LOG_INFO, "Cannot change active directory to %s", base);
 
         } else {
-            crm_info("Changed active directory to %s/%s", base, pwent->pw_name);
+            crm_info("Changed active directory to %s", base);
 #if 0
             {
                 char path[512];

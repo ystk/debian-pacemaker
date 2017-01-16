@@ -48,6 +48,8 @@
 #include <../pengine/pengine.h>
 #include <crm/stonith-ng.h>
 
+extern void cleanup_alloc_calculations(pe_working_set_t * data_set);
+
 void clean_up(int rc);
 void crm_diff_update(const char *event, xmlNode * msg);
 gboolean mon_refresh_display(gpointer user_data);
@@ -2277,13 +2279,27 @@ print_cluster_counts(FILE *stream, pe_working_set_t *data_set, const char *stack
     switch (output_format) {
         case mon_output_plain:
         case mon_output_console:
-            print_as("%d node%s and %d resource%s configured",
-                     nnodes, s_if_plural(nnodes),
-                     nresources, s_if_plural(nresources));
+
             if (stack_s && strstr(stack_s, "classic openais") != NULL) {
                 print_as(", %s expected votes", quorum_votes);
             }
+
+            if(is_set(data_set->flags, pe_flag_maintenance_mode)) {
+                print_as("\n              *** Resource management is DISABLED ***");
+                print_as("\n  The cluster will not attempt to start, stop or recover services");
+                print_as("\n");
+            }
+
+            print_as("\n%d node%s and %d resource%s configured",
+                     nnodes, s_if_plural(nnodes),
+                     nresources, s_if_plural(nresources));
+            if(data_set->disabled_resources || data_set->blocked_resources) {
+                print_as(": %d resource%s DISABLED and %d BLOCKED from being started due to failures",
+                         data_set->disabled_resources, s_if_plural(data_set->disabled_resources),
+                         data_set->blocked_resources);
+            }
             print_as("\n\n");
+
             break;
 
         case mon_output_html:
@@ -2412,14 +2428,6 @@ print_cluster_summary(FILE *stream, pe_working_set_t *data_set)
     const char *stack_s = get_cluster_stack(data_set);
     gboolean header_printed = FALSE;
 
-    if (show & mon_show_times) {
-        if (header_printed == FALSE) {
-            print_cluster_summary_header(stream);
-            header_printed = TRUE;
-        }
-        print_cluster_times(stream, data_set);
-    }
-
     if (show & mon_show_stack) {
         if (header_printed == FALSE) {
             print_cluster_summary_header(stream);
@@ -2437,7 +2445,18 @@ print_cluster_summary(FILE *stream, pe_working_set_t *data_set)
         print_cluster_dc(stream, data_set);
     }
 
-    if (show & mon_show_count) {
+    if (show & mon_show_times) {
+        if (header_printed == FALSE) {
+            print_cluster_summary_header(stream);
+            header_printed = TRUE;
+        }
+        print_cluster_times(stream, data_set);
+    }
+
+    if (is_set(data_set->flags, pe_flag_maintenance_mode)
+        || data_set->disabled_resources
+        || data_set->blocked_resources
+        || is_set(show, mon_show_count)) {
         if (header_printed == FALSE) {
             print_cluster_summary_header(stream);
             header_printed = TRUE;
@@ -3285,7 +3304,7 @@ send_snmp_trap(const char *node, const char *rsc, const char *task, int target_r
         char csysuptime[20];
         time_t now = time(NULL);
 
-        sprintf(csysuptime, "%ld", now);
+        sprintf(csysuptime, "%lld", (long long) now);
         snmp_add_var(trap_pdu, sysuptime_oid, sizeof(sysuptime_oid) / sizeof(oid), 't', csysuptime);
     }
 
@@ -3657,7 +3676,7 @@ handle_rsc_op(xmlNode * xml, const char *node_id)
 
     id = crm_element_value(rsc_op, XML_LRM_ATTR_TASK_KEY);
     if (id == NULL) {
-        /* Compatability with <= 1.1.5 */
+        /* Compatibility with <= 1.1.5 */
         id = ID(rsc_op);
     }
 
@@ -4019,7 +4038,7 @@ mon_refresh_display(gpointer user_data)
             break;
     }
 
-    cleanup_calculations(&data_set);
+    cleanup_alloc_calculations(&data_set);
     return TRUE;
 }
 

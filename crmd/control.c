@@ -245,8 +245,9 @@ int
 crmd_fast_exit(int rc) 
 {
     if (is_set(fsa_input_register, R_STAYDOWN)) {
-        crm_warn("Inhibiting respawn: %d -> %d", rc, 100);
-        rc = 100;
+        crm_warn("Inhibiting respawn "CRM_XS" remapping exit code %d to %d",
+                 rc, DAEMON_RESPAWN_STOP);
+        rc = DAEMON_RESPAWN_STOP;
     }
 
     if (rc == pcmk_ok && is_set(fsa_input_register, R_IN_RECOVERY)) {
@@ -269,7 +270,8 @@ crmd_exit(int rc)
         return rc;
 
     } else if(in_progress) {
-        crm_notice("Error during shutdown process, terminating now: %s (%d)", pcmk_strerror(rc), rc);
+        crm_notice("Error during shutdown process, terminating now with status %d: %s",
+                   rc, pcmk_strerror(rc));
         crm_write_blackbox(SIGTRAP, NULL);
         crmd_fast_exit(rc);
     }
@@ -318,7 +320,8 @@ crmd_exit(int rc)
      * to report on - allowing real errors stand out
      */
     if(rc != pcmk_ok) {
-        crm_notice("Forcing immediate exit: %s (%d)", pcmk_strerror(rc), rc);
+        crm_notice("Forcing immediate exit with status %d: %s",
+                   rc, pcmk_strerror(rc));
         crm_write_blackbox(SIGTRAP, NULL);
         return crmd_fast_exit(rc);
     }
@@ -405,21 +408,29 @@ crmd_exit(int rc)
     mainloop_destroy_signal(SIGUSR1);
     mainloop_destroy_signal(SIGTERM);
     mainloop_destroy_signal(SIGTRAP);
-    mainloop_destroy_signal(SIGCHLD);
+    /* leave SIGCHLD engaged as we might still want to drain some service-actions */
 
     if (mloop) {
-        int lpc = 0;
         GMainContext *ctx = g_main_loop_get_context(crmd_mainloop);
 
         /* Don't re-enter this block */
         crmd_mainloop = NULL;
 
+        crmd_drain_alerts(ctx);
+
+        /* no signals on final draining anymore */
+        mainloop_destroy_signal(SIGCHLD);
+
         crm_trace("Draining mainloop %d %d", g_main_loop_is_running(mloop), g_main_context_pending(ctx));
 
-        while(g_main_context_pending(ctx) && lpc < 10) {
-            lpc++;
-            crm_trace("Iteration %d", lpc);
-            g_main_context_dispatch(ctx);
+        {
+            int lpc = 0;
+
+            while((g_main_context_pending(ctx) && lpc < 10)) {
+                lpc++;
+                crm_trace("Iteration %d", lpc);
+                g_main_context_dispatch(ctx);
+            }
         }
 
         crm_trace("Closing mainloop %d %d", g_main_loop_is_running(mloop), g_main_context_pending(ctx));
@@ -468,6 +479,8 @@ crmd_exit(int rc)
         g_main_loop_unref(mloop);
 
         crm_trace("Done %d", rc);
+    } else {
+        mainloop_destroy_signal(SIGCHLD);
     }
 
     /* Graceful */
@@ -894,15 +907,18 @@ pe_cluster_option crmd_opts[] = {
         },
 
 #ifdef RHEL7_COMPAT
-    /* this interface is expected to change but was released in RHEL 7 */
+    /* These options were superseded by the alerts feature and now are just an
+     * alternate interface to it. It was never released upstream, but was
+     * released in RHEL 7, so we allow it to be enabled at compile-time by
+     * defining RHEL7_COMPAT.
+     */
 	{ "notification-agent", NULL, "string", NULL, "/dev/null", &check_script,
-          "Notification script or tool to be called after significant cluster events",
-          "Full path to a script or binary that will be invoked when resources start/stop/fail, fencing occurs or nodes join/leave the cluster.\n"
-          "Must exist on all nodes in the cluster."
+          "Deprecated",
+          "Use alert path in alerts section instead"
         },
 	{ "notification-recipient", NULL, "string", NULL, "", NULL,
-          "Destination for notifications (Optional)",
-          "Where should the supplied script send notifications to.  Useful to avoid hard-coding this in the script."
+          "Deprecated",
+          "Use recipient value in alerts section instead"
         },
 #endif
 
@@ -931,7 +947,7 @@ pe_cluster_option crmd_opts[] = {
           "Delay cluster recovery for the configured interval to allow for additional/related events to occur.\n"
           "Useful if your configuration is sensitive to the order in which ping updates arrive."
         },
-	{ "stonith-watchdog-timeout", NULL, "time", NULL, NULL, &check_timer,
+	{ "stonith-watchdog-timeout", NULL, "time", NULL, NULL, &check_sbd_timeout,
 	  "How long to wait before we can assume nodes are safely down", NULL
         },
 	{ "no-quorum-policy", "no_quorum_policy", "enum", "stop, freeze, ignore, suicide", "stop", &check_quorum, NULL, NULL },
@@ -972,8 +988,8 @@ config_query_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void
     const char *value = NULL;
     GHashTable *config_hash = NULL;
     crm_time_t *now = crm_time_new(NULL);
-    long st_timeout = 0;
-    long sbd_timeout = 0;
+    xmlNode *crmconfig = NULL;
+    xmlNode *alerts = NULL;
 
     if (rc != pcmk_ok) {
         fsa_data_t *msg_data = NULL;
@@ -988,11 +1004,25 @@ config_query_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void
         goto bail;
     }
 
+    crmconfig = output;
+    if ((crmconfig) &&
+        (crm_element_name(crmconfig)) &&
+        (strcmp(crm_element_name(crmconfig), XML_CIB_TAG_CRMCONFIG) != 0)) {
+        crmconfig = first_named_child(crmconfig, XML_CIB_TAG_CRMCONFIG);
+    }
+    if (!crmconfig) {
+        fsa_data_t *msg_data = NULL;
+
+        crm_err("Local CIB query for " XML_CIB_TAG_CRMCONFIG " section failed");
+        register_fsa_error(C_FSA_INTERNAL, I_ERROR, NULL);
+        goto bail;
+    }
+
     crm_debug("Call %d : Parsing CIB options", call_id);
     config_hash =
         g_hash_table_new_full(crm_str_hash, g_str_equal, g_hash_destroy_str, g_hash_destroy_str);
 
-    unpack_instance_attributes(output, output, XML_CIB_TAG_PROPSET, NULL, config_hash,
+    unpack_instance_attributes(crmconfig, crmconfig, XML_CIB_TAG_PROPSET, NULL, config_hash,
                                CIB_OPTIONS_FIRST, FALSE, now);
 
     verify_crmd_options(config_hash);
@@ -1014,41 +1044,8 @@ config_query_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void
         throttle_load_target = strtof(value, NULL) / 100;
     }
 
-    value = getenv("SBD_WATCHDOG_TIMEOUT");
-    sbd_timeout = crm_get_msec(value);
-
-    value = crmd_pref(config_hash, "stonith-watchdog-timeout");
-    st_timeout = crm_get_msec(value);
-
-    if(st_timeout > 0 && !daemon_option_enabled(crm_system_name, "watchdog")) {
-        do_crm_log_always(LOG_EMERG, "Shutting down pacemaker, no watchdog device configured");
-        crmd_exit(DAEMON_RESPAWN_STOP);
-
-    } else if(!daemon_option_enabled(crm_system_name, "watchdog")) {
-        crm_trace("Watchdog disabled");
-
-    } else if(value == NULL && sbd_timeout > 0) {
-        char *timeout = NULL;
-
-        st_timeout = 2 * sbd_timeout / 1000;
-        timeout = crm_strdup_printf("%lds", st_timeout);
-        crm_notice("Setting stonith-watchdog-timeout=%s", timeout);
-
-        update_attr_delegate(fsa_cib_conn, cib_none, XML_CIB_TAG_CRMCONFIG, NULL, NULL, NULL, NULL,
-                             "stonith-watchdog-timeout", timeout, FALSE, NULL, NULL);
-        free(timeout);
-
-    } else if(st_timeout <= 0) {
-        crm_notice("Watchdog enabled but stonith-watchdog-timeout is disabled");
-
-    } else if(st_timeout < sbd_timeout) {
-        do_crm_log_always(LOG_EMERG, "Shutting down pacemaker, stonith-watchdog-timeout (%ldms) is too short (must be greater than %ldms)",
-                          st_timeout, sbd_timeout);
-        crmd_exit(DAEMON_RESPAWN_STOP);
-    }
-
     value = crmd_pref(config_hash, "no-quorum-policy");
-    if (safe_str_eq(value, "suicide") && daemon_option_enabled(crm_system_name, "watchdog")) {
+    if (safe_str_eq(value, "suicide") && pcmk_locate_sbd()) {
         no_quorum_suicide_escalation = TRUE;
     }
 
@@ -1089,6 +1086,9 @@ config_query_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void
         fsa_cluster_name = strdup(value);
     }
 
+    alerts = first_named_child(output, XML_CIB_TAG_ALERTS);
+    parse_notifications(alerts);
+
     set_bit(fsa_input_register, R_READ_CONFIG);
     crm_trace("Triggering FSA: %s", __FUNCTION__);
     mainloop_set_trigger(fsa_source);
@@ -1102,7 +1102,9 @@ gboolean
 crm_read_options(gpointer user_data)
 {
     int call_id =
-        fsa_cib_conn->cmds->query(fsa_cib_conn, XML_CIB_TAG_CRMCONFIG, NULL, cib_scope_local);
+        fsa_cib_conn->cmds->query(fsa_cib_conn,
+            "//" XML_CIB_TAG_CRMCONFIG " | //" XML_CIB_TAG_ALERTS,
+            NULL, cib_xpath | cib_scope_local);
 
     fsa_register_cib_callback(call_id, FALSE, NULL, config_query_callback);
     crm_trace("Querying the CIB... call %d", call_id);
@@ -1141,8 +1143,8 @@ crm_shutdown(int nsig)
             }
 
             /* can't rely on this... */
-            crm_notice("Requesting shutdown, upper limit is %dms",
-                       shutdown_escalation_timer->period_ms);
+            crm_notice("Shutting down cluster resource manager " CRM_XS
+                       " limit=%dms", shutdown_escalation_timer->period_ms);
             crm_timer_start(shutdown_escalation_timer);
         }
 

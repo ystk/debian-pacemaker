@@ -616,11 +616,11 @@ __xml_acl_create(xmlNode * xml, xmlNode *target, enum xml_private_flags mode)
     const char *xpath = crm_element_value(xml, XML_ACL_ATTR_XPATH);
 
     if(tag == NULL) {
-        /* Compatability handling for pacemaker < 1.1.12 */
+        /* Compatibility handling for pacemaker < 1.1.12 */
         tag = crm_element_value(xml, XML_ACL_ATTR_TAGv1);
     }
     if(ref == NULL) {
-        /* Compatability handling for pacemaker < 1.1.12 */
+        /* Compatibility handling for pacemaker < 1.1.12 */
         ref = crm_element_value(xml, XML_ACL_ATTR_REFv1);
     }
 
@@ -907,7 +907,7 @@ __xml_purge_attributes(xmlNode *xml)
     xml_private_t *p = xml->_private;
 
     if(__xml_acl_mode_test(p->flags, xpf_acl_read)) {
-        crm_trace("%s is readable", crm_element_name(xml), ID(xml));
+        crm_trace("%s[@id=%s] is readable", crm_element_name(xml), ID(xml));
         return TRUE;
     }
 
@@ -1554,8 +1554,8 @@ xml_create_patchset(int format, xmlNode *source, xmlNode *target, bool *config_c
         crm_xml_add_int(target, XML_ATTR_GENERATION, counter+1);
 
     } else if(manage_version) {
-        crm_trace("Status changed %d", format);
         crm_element_value_int(target, XML_ATTR_NUMUPDATES, &counter);
+        crm_trace("Status changed %d - %d %s", format, counter, crm_element_value(source, XML_ATTR_NUMUPDATES));
         crm_xml_add_int(target, XML_ATTR_NUMUPDATES, counter+1);
     }
 
@@ -2062,11 +2062,14 @@ xml_patch_version_check(xmlNode *xml, xmlNode *patchset, int format)
 
     for(lpc = 0; lpc < DIMOF(vfields); lpc++) {
         if(this[lpc] < del[lpc]) {
-            crm_debug("Current %s is too low (%d < %d)", vfields[lpc], this[lpc], del[lpc]);
+            crm_debug("Current %s is too low (%d.%d.%d < %d.%d.%d --> %d.%d.%d)", vfields[lpc],
+                      this[0], this[1], this[2], del[0], del[1], del[2], add[0], add[1], add[2]);
             return -pcmk_err_diff_resync;
 
         } else if(this[lpc] > del[lpc]) {
-            crm_info("Current %s is too high (%d > %d)", vfields[lpc], this[lpc], del[lpc]);
+            crm_info("Current %s is too high (%d.%d.%d > %d.%d.%d --> %d.%d.%d) %p", vfields[lpc],
+                     this[0], this[1], this[2], del[0], del[1], del[2], add[0], add[1], add[2], patchset);
+            crm_log_xml_info(patchset, "OldPatch");
             return -pcmk_err_old_data;
         }
     }
@@ -2423,7 +2426,7 @@ xml_apply_patchset(xmlNode *xml, xmlNode *patchset, bool check_version)
                 save_xml_to_file(patchset,"PatchDigest:diff", NULL);
 
             } else {
-                crm_trace("%p %0.6x", digest_cs, digest_cs ? digest_cs->targets : 0);
+                crm_trace("%p %.6x", digest_cs, digest_cs ? digest_cs->targets : 0);
             }
 
         } else {
@@ -3871,7 +3874,7 @@ crm_xml_dump(xmlNode * data, int options, char **buffer, int *offset, int *max, 
          * It exists to help debug slowness in xmlNodeDump() and
          * potentially if we ever want to go back to it.
          *
-         * In theory its a good idea (reuse) but our custom version does
+         * In theory it's a good idea (reuse) but our custom version does
          * better for the filtered case and avoids the final strdup() for
          * everything
          */
@@ -4157,7 +4160,7 @@ apply_xml_diff(xmlNode * old, xmlNode * diff, xmlNode ** new)
             crm_info("Digest mis-match: expected %s, calculated %s", digest, new_digest);
             result = FALSE;
 
-            crm_trace("%p %0.6x", digest_cs, digest_cs ? digest_cs->targets : 0);
+            crm_trace("%p %.6x", digest_cs, digest_cs ? digest_cs->targets : 0);
             if (digest_cs && digest_cs->targets) {
                 save_xml_to_file(old, "diff:original", NULL);
                 save_xml_to_file(diff, "diff:input", NULL);

@@ -166,7 +166,8 @@ crm_cs_flush(gpointer data)
 
         sent++;
         last_sent++;
-        crm_trace("CPG message sent, size=%d", iov->iov_len);
+        crm_trace("CPG message sent, size=%llu",
+                  (unsigned long long) iov->iov_len);
 
         cs_message_queue = g_list_remove(cs_message_queue, iov);
         free(iov->iov_base);
@@ -175,11 +176,13 @@ crm_cs_flush(gpointer data)
 
     queue_len -= sent;
     if (sent > 1 || cs_message_queue) {
-        crm_info("Sent %d CPG messages  (%d remaining, last=%u): %s (%d)",
-                 sent, queue_len, last_sent, ais_error2text(rc), rc);
+        crm_info("Sent %d CPG messages  (%d remaining, last=%u): %s (%lld)",
+                 sent, queue_len, last_sent, ais_error2text(rc),
+                 (long long) rc);
     } else {
-        crm_trace("Sent %d CPG messages  (%d remaining, last=%u): %s (%d)",
-                  sent, queue_len, last_sent, ais_error2text(rc), rc);
+        crm_trace("Sent %d CPG messages  (%d remaining, last=%u): %s (%lld)",
+                  sent, queue_len, last_sent, ais_error2text(rc),
+                  (long long) rc);
     }
 
     if (cs_message_queue) {
@@ -200,7 +203,8 @@ send_cpg_iov(struct iovec * iov)
     static unsigned int queued = 0;
 
     queued++;
-    crm_trace("Queueing CPG message %u (%d bytes)", queued, iov->iov_len);
+    crm_trace("Queueing CPG message %u (%llu bytes)",
+              queued, (unsigned long long) iov->iov_len);
     cs_message_queue = g_list_append(cs_message_queue, iov);
     crm_cs_flush(&pcmk_cpg_handle);
     return TRUE;
@@ -392,8 +396,8 @@ pcmk_cpg_membership(cpg_handle_t handle,
                  (peer? peer->uname : "<none>"), counter, i);
 
         /* Anyone that is sending us CPG messages must also be a _CPG_ member.
-         * But its _not_ safe to assume its in the quorum membership.
-         * We may have just found out its dead and are processing the last couple of messages it sent
+         * But it's _not_ safe to assume it's in the quorum membership.
+         * We may have just found out it's dead and are processing the last couple of messages it sent
          */
         peer = crm_update_peer_proc(__FUNCTION__, peer, crm_proc_cpg, ONLINESTATUS);
         if(peer && peer->state && crm_is_peer_active(peer) == FALSE) {
@@ -456,9 +460,9 @@ cluster_connect_cpg(crm_cluster_t *cluster)
     cluster->group.value[0] = 0;
 
     /* group.value is char[128] */
-    strncpy(cluster->group.value, crm_system_name, 127);
+    strncpy(cluster->group.value, crm_system_name?crm_system_name:"unknown", 127);
     cluster->group.value[127] = 0;
-    cluster->group.length = 1 + QB_MIN(127, strlen(crm_system_name));
+    cluster->group.length = 1 + QB_MIN(127, strlen(cluster->group.value));
 
     cs_repeat(retries, 30, rc = cpg_initialize(&handle, &cpg_callbacks));
     if (rc != CS_OK) {
@@ -623,11 +627,13 @@ send_cluster_text(int class, const char *data,
     iov->iov_len = msg->header.size;
 
     if (msg->compressed_size) {
-        crm_trace("Queueing CPG message %u to %s (%d bytes, %d bytes compressed payload): %.200s",
-                  msg->id, target, iov->iov_len, msg->compressed_size, data);
+        crm_trace("Queueing CPG message %u to %s (%llu bytes, %d bytes compressed payload): %.200s",
+                  msg->id, target, (unsigned long long) iov->iov_len,
+                  msg->compressed_size, data);
     } else {
-        crm_trace("Queueing CPG message %u to %s (%d bytes, %d bytes payload): %.200s",
-                  msg->id, target, iov->iov_len, msg->size, data);
+        crm_trace("Queueing CPG message %u to %s (%llu bytes, %d bytes payload): %.200s",
+                  msg->id, target, (unsigned long long) iov->iov_len,
+                  msg->size, data);
     }
     free(target);
 
@@ -679,7 +685,7 @@ text2msg_type(const char *text)
         int scan_rc = sscanf(text, "%d", &type);
 
         if (scan_rc != 1 || type <= crm_msg_stonith_ng) {
-            /* Ensure its sane */
+            /* Ensure it's sane */
             type = crm_msg_none;
         }
     }

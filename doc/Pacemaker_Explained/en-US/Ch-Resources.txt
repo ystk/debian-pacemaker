@@ -311,14 +311,16 @@ indexterm:[priority,Resource Option]
 indexterm:[Resource,Option,priority]
 
 |target-role
-|started
+|Started
 |What state should the cluster attempt to keep this resource in? Allowed values:
 
-* +stopped:+ Force the resource to be stopped
-* +started:+ Allow the resource to be started (In the case of
-  <<s-resource-multistate,multi-state>> resources, they will not be promoted to
-  master)
-* +master:+ Allow the resource to be started and, if appropriate, promoted
+* +Stopped:+ Force the resource to be stopped
+* +Started:+ Allow the resource to be started (and in the case of
+  <<s-resource-multistate,multi-state>> resources, promoted to master if
+  appropriate)
+* +Slave:+ Allow the resource to be started, but only in Slave mode if
+  the resource is <<s-resource-multistate,multi-state>>
+* +Master:+ Equivalent to +Started+
 indexterm:[target-role,Resource Option]
 indexterm:[Resource,Option,target-role]
 
@@ -357,8 +359,12 @@ indexterm:[Resource,Option,requires]
 |migration-threshold
 |INFINITY
 |How many failures may occur for this resource on a node, before this
- node is marked ineligible to host this resource. A value of INFINITY
- indicates that this feature is disabled.
+ node is marked ineligible to host this resource. A value of 0 indicates that
+ this feature is disabled (the node will never be marked ineligible); by
+ constrast, the cluster treats INFINITY (the default) as a very large but
+ finite number. This option has an effect only if the failed operation has
+ on-fail=restart (the default), and additionally for failed start operations,
+ if the cluster property start-failure-is-fatal is false.
  indexterm:[migration-threshold,Resource Option]
  indexterm:[Resource,Option,migration-threshold]
 
@@ -367,6 +373,9 @@ indexterm:[Resource,Option,requires]
 |How many seconds to wait before acting as if the failure had not
  occurred, and potentially allowing the resource back to the node on
  which it failed. A value of 0 indicates that this feature is disabled.
+ As with any time-based actions, this is not guaranteed to be checked more
+ frequently than the value of +cluster-recheck-interval+ (see
+ <<s-cluster-options>>).
  indexterm:[failure-timeout,Resource Option]
  indexterm:[Resource,Option,failure-timeout]
 
@@ -519,7 +528,7 @@ but moderate. The minimum timeouts should never be below 10 seconds.
 Location to store the resource state in.
 </longdesc>
 <shortdesc lang="en">State file</shortdesc>
-<content type="string" default="/var/run//Dummy-{OCF_RESOURCE_INSTANCE}.state" />
+<content type="string" default="/var/run/Dummy-default.state" />
 </parameter>
 
 <parameter name="fake" unique="0">
@@ -611,6 +620,8 @@ you need to add a +monitor+ operation to the resource's definition.
 |interval
 |0
 |How frequently (in seconds) to perform the operation. A value of 0 means never.
+ A positive value defines a 'recurring action', which is typically used with
+ <<s-resource-monitoring,monitor>>.
  indexterm:[interval,Action Property]
  indexterm:[Action,Property,interval]
 
@@ -637,8 +648,12 @@ indexterm:[Action,Property,on-fail]
 
 |enabled
 |TRUE
-|If +false+, the operation is treated as if it does not exist. Allowed
- values: +true+, +false+
+|If +false+, ignore this operation definition.  This is typically used to pause
+ a particular recurring monitor operation;  for instance, it can complement
+ the respective resource being unmanaged (+is-managed=false+), as this alone
+ will <<s-monitoring-unmanaged,not block any configured monitoring>>.
+ Disabling the operation does not suppress all actions of the given type.
+ Allowed values: +true+, +false+.
  indexterm:[enabled,Action Property]
  indexterm:[Action,Property,enabled]
 
@@ -662,6 +677,7 @@ indexterm:[Action,Property,on-fail]
 
 |=========================================================
 
+[[s-resource-monitoring]]
 === Monitoring Resources for Failure ===
 
 When Pacemaker first starts a resource, it runs one-time monitor operations
@@ -684,6 +700,7 @@ it thinks 'should' be running the resource, and the second monitor on any nodes
 that it thinks 'should not' be running the resource (for the truly paranoid,
 who want to know when an administrator manually starts a service by mistake).
 
+[[s-monitoring-unmanaged]]
 === Monitoring Resources When Administration is Disabled ===
 
 Recurring monitor operations behave differently under various administrative

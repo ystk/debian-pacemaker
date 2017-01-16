@@ -885,7 +885,7 @@ action_complete(svc_action_t * action)
              *
              * So we have to jump through a few hoops so that we don't
              * report 'complete' to the rest of pacemaker until, you know,
-             * its actually done.
+             * it's actually done.
              */
             goagain = true;
             cmd->real_action = cmd->action;
@@ -899,6 +899,8 @@ action_complete(svc_action_t * action)
         } else if(cmd->real_action) {
             /* Ok, so this is the follow up monitor action to check if start actually completed */
             if(cmd->lrmd_op_status == PCMK_LRM_OP_DONE && cmd->exec_rc == PCMK_OCF_PENDING) {
+                goagain = true;
+            } else if(cmd->exec_rc == PCMK_OCF_OK && safe_str_eq(cmd->real_action, "stop")) {
                 goagain = true;
 
             } else {
@@ -1378,13 +1380,16 @@ process_lrmd_signon(crm_client_t * client, uint32_t id, xmlNode * request)
     const char *is_ipc_provider = crm_element_value(request, F_LRMD_IS_IPC_PROVIDER);
     const char *protocol_version = crm_element_value(request, F_LRMD_PROTOCOL_VERSION);
 
-    if (safe_str_neq(protocol_version, LRMD_PROTOCOL_VERSION)) {
+    if (compare_version(protocol_version, LRMD_PROTOCOL_VERSION) < 0) {
+        crm_err("Cluster API version must be greater than or equal to %s, not %s",
+                LRMD_PROTOCOL_VERSION, protocol_version);
         crm_xml_add_int(reply, F_LRMD_RC, -EPROTO);
         crm_xml_add(reply, F_LRMD_PROTOCOL_VERSION, LRMD_PROTOCOL_VERSION);
     }
 
     crm_xml_add(reply, F_LRMD_OPERATION, CRM_OP_REGISTER);
     crm_xml_add(reply, F_LRMD_CLIENTID, client->id);
+    crm_xml_add(reply, F_LRMD_PROTOCOL_VERSION, LRMD_PROTOCOL_VERSION);
     lrmd_server_send_reply(client, id, reply);
 
     if (crm_is_true(is_ipc_provider)) {
@@ -1538,7 +1543,7 @@ cancel_op(const char *rsc_id, const char *action, int interval)
      * 1. Check pending ops list, if it hasn't been handed off
      *    to the service library or stonith recurring list remove
      *    it there and that will stop it.
-     * 2. If it isn't in the pending ops list, then its either a
+     * 2. If it isn't in the pending ops list, then it's either a
      *    recurring op in the stonith recurring list, or the service
      *    library's recurring list.  Stop it there
      * 3. If not found in any lists, then this operation has either
@@ -1681,6 +1686,11 @@ process_lrmd_message(crm_client_t * client, uint32_t id, xmlNode * request)
     } else if (crm_str_eq(op, LRMD_OP_POKE, TRUE)) {
         do_notify = 1;
         do_reply = 1;
+    } else if (crm_str_eq(op, LRMD_OP_CHECK, TRUE)) {
+        xmlNode *data = get_message_xml(request, F_LRMD_CALLDATA); 
+        const char *timeout = crm_element_value(data, F_LRMD_WATCHDOG);
+        CRM_LOG_ASSERT(data != NULL);
+        check_sbd_timeout(timeout);
     } else {
         rc = -EOPNOTSUPP;
         do_reply = 1;
@@ -1688,8 +1698,8 @@ process_lrmd_message(crm_client_t * client, uint32_t id, xmlNode * request)
         crm_log_xml_warn(request, "UnknownOp");
     }
 
-    crm_debug("Processed %s operation from %s: rc=%d, reply=%d, notify=%d, exit=%d",
-              op, client->id, rc, do_reply, do_notify, exit);
+    crm_debug("Processed %s operation from %s: rc=%d, reply=%d, notify=%d",
+              op, client->id, rc, do_reply, do_notify);
 
     if (do_reply) {
         send_reply(client, rc, id, call_id);
