@@ -34,11 +34,12 @@ RPM_OPTS	= --define "_sourcedir $(RPM_ROOT)" 	\
 
 MOCK_OPTIONS	?= --resultdir=$(RPM_ROOT)/mock --no-cleanup-after
 
-# Default to fedora compliant spec files
+# Default to building Fedora-compliant spec files
 # SLES:     /etc/SuSE-release
 # openSUSE: /etc/SuSE-release
-# RHEL:     /etc/redhat-release
+# RHEL:     /etc/redhat-release, /etc/system-release
 # Fedora:   /etc/fedora-release, /etc/redhat-release, /etc/system-release
+# CentOS:   /etc/centos-release, /etc/redhat-release, /etc/system-release
 F       ?= $(shell test ! -e /etc/fedora-release && echo 0; test -e /etc/fedora-release && rpm --eval %{fedora})
 ARCH    ?= $(shell test -e /etc/fedora-release && rpm --eval %{_arch})
 MOCK_CFG ?= $(shell test -e /etc/fedora-release && echo fedora-$(F)-$(ARCH))
@@ -68,9 +69,16 @@ COUNT           = $(shell expr 1 + $(LAST_COUNT))
 
 SPECVERSION	?= $(COUNT)
 
+# toplevel rsync destination for www targets (without trailing slash)
+RSYNC_DEST      ?= root@www.clusterlabs.org:/var/www/html
+
+# recursive, preserve symlinks/permissions/times, verbose, compress,
+# don't cross filesystems, sparse, show progress
+RSYNC_OPTS      = -rlptvzxS --progress
+
 # rpmbuild wrapper that translates "--with[out] FEATURE" into RPM macros
 #
-# Unfortunately, at least recent versions of rpm do no support mentioned
+# Unfortunately, at least recent versions of rpm do not support mentioned
 # switch.  To work this around, we can emulate mechanism that rpm uses
 # internally: unfold the flags into respective macro definitions:
 #
@@ -94,10 +102,10 @@ rpmbuild-with = \
 	eval set -- "$${WITH}"; \
 	while true; do \
 		case "$$1" in \
-		--with) CMD="$${CMD} --define \"_with_$$2 --with-$$2\""; shift 2; \
-			[ "$$2" != pre_release ] || PREREL=1;; \
-		--without) CMD="$${CMD} --define \"_without_$$2 --without-$$2\""; shift 2; \
-		        [ "$$2" != pre_release ] || PREREL=0;; \
+		--with) CMD="$${CMD} --define \"_with_$$2 --with-$$2\""; \
+			[ "$$2" != pre_release ] || PREREL=1; shift 2;; \
+		--without) CMD="$${CMD} --define \"_without_$$2 --without-$$2\""; \
+		        [ "$$2" != pre_release ] || PREREL=0; shift 2;; \
 		--) shift ; break ;; \
 		*) echo "cannot parse WITH: $$1"; exit 1;; \
 		esac; \
@@ -149,30 +157,16 @@ $(PACKAGE)-suse.spec: $(PACKAGE).spec.in GNUmakefile
 	sed -i s:corosynclib:libcorosync:g $@
 	sed -i s:libexecdir}/lcrso:libdir}/lcrso:g $@
 	sed -i 's:%{name}-libs:lib%{name}3:g' $@
-	sed -i s:heartbeat-libs:heartbeat:g $@
 	sed -i s:cluster-glue-libs:libglue:g $@
-	sed -i s:libselinux-devel:automake:g $@
-	sed -i s:lm_sensors-devel:automake:g $@
 	sed -i s:bzip2-devel:libbz2-devel:g $@
-	sed -i s:bcond_without\ publican:bcond_with\ publican:g $@
 	sed -i s:docbook-style-xsl:docbook-xsl-stylesheets:g $@
 	sed -i s:libtool-ltdl-devel::g $@
-	sed -i s:dbus-devel:dbus-1-devel:g $@
 	sed -i s:publican::g $@
 	sed -i s:byacc::g $@
-	sed -i s:global\ cs_major.*:global\ cs_major\ 1:g $@
-	sed -i s:global\ cs_minor.*:global\ cs_minor\ 4:g $@
 	sed -i s:gnutls-devel:libgnutls-devel:g $@
 	sed -i s:189:90:g $@
-	sed -i 's@python-devel@python-devel python-curses python-xml@' $@
-	sed -i 's@Requires:      python@Requires:      python python-curses python-xml@' $@
-	sed -i 's@%systemd_post pacemaker.service@if [ ZZZ -eq 1 ]; then systemctl preset pacemaker.service || : ; fi@' $@
-	sed -i 's@%systemd_postun_with_restart pacemaker.service@systemctl daemon-reload || : ; if [ ZZZ -ge 1 ]; then systemctl try-restart pacemaker.service || : ; fi@' $@
-	sed -i 's@%systemd_preun pacemaker.service@if [ ZZZ -eq 0 ]; then systemctl --no-reload disable pacemaker.service || : ; systemctl stop pacemaker.service || : ; fi@' $@
-	sed -i 's@%systemd_post pacemaker_remote.service@if [ ZZZ -eq 1 ]; then systemctl preset pacemaker_remote.service || : ; fi@' $@
-	sed -i 's@%systemd_postun_with_restart pacemaker_remote.service@systemctl daemon-reload || : ; if [ ZZZ -ge 1 ]; then systemctl try-restart pacemaker_remote.service || : ; fi@' $@
-	sed -i 's@%systemd_preun pacemaker_remote.service@if [ ZZZ -eq 0 ]; then systemctl --no-reload disable pacemaker_remote.service || : ; systemctl stop pacemaker_remote.service || : ; fi@' $@
-	sed -i "s@ZZZ@\o0441@g" $@
+	sed -i 's:python-devel:python-curses python-xml python-devel:' $@
+	sed -i 's@Requires:      python@Requires:      python-curses python-xml python@' $@
 	@echo "Applied SUSE-specific modifications"
 
 
@@ -200,7 +194,6 @@ srpm-%:	export $(PACKAGE)-%.spec
 	fi
 	sed -i 's/global\ specversion.*/global\ specversion\ $(SPECVERSION)/' $(PACKAGE).spec
 	sed -i 's/global\ commit.*/global\ commit\ $(TAG)/' $(PACKAGE).spec
-	@WITH=$$(getopt -o "" -l with:,without: -n '$@' -- $(WITH)) || exit 1; \
 	$(call rpmbuild-with,$(WITH),-bs --define "dist .$*" $(RPM_OPTS),$(PACKAGE).spec)
 
 chroot: mock-$(MOCK_CFG) mock-install-$(MOCK_CFG) mock-sh-$(MOCK_CFG)
@@ -268,7 +261,7 @@ dirty:
 	make TAG=dirty mock
 
 COVERITY_DIR	 = $(shell pwd)/coverity-$(TAG)
-COVFILE          = pacemaker-coverity-$(TAG).tgz
+COVFILE          = $(PACKAGE)-coverity-$(TAG).tgz
 COVHOST		?= scan5.coverity.com
 COVPASS		?= password
 
@@ -294,7 +287,7 @@ coverity-corp:
 	cov-analyze --dir $(COVERITY_DIR) --wait-for-license
 	cov-format-errors --dir $(COVERITY_DIR) --emacs-style > $(TAG).coverity
 	cov-format-errors --dir $(COVERITY_DIR)
-	rsync -avzxlSD --progress $(COVERITY_DIR)/c/output/errors/ root@www.clusterlabs.org:/var/www/html/coverity/$(PACKAGE)/$(TAG)
+	rsync $(RSYNC_OPTS) "$(COVERITY_DIR)/c/output/errors/" "$(RSYNC_DEST)/coverity/$(PACKAGE)/$(TAG)"
 	make core-clean
 #	cov-commit-defects --host $(COVHOST) --dir $(COVERITY_DIR) --stream $(PACKAGE) --user auto --password $(COVPASS)
 	rm -rf $(COVERITY_DIR)
@@ -305,12 +298,12 @@ global: clean-generic
 %.8.html: %.8
 	echo groff -mandoc `man -w ./$<` -T html > $@
 	groff -mandoc `man -w ./$<` -T html > $@
-	rsync -azxlSD --progress $@ root@www.clusterlabs.org:/var/www/html/man/
+	rsync $(RSYNC_OPTS) "$@" "$(RSYNC_DEST)/man/$(PACKAGE)/"
 
 %.7.html: %.7
 	echo groff -mandoc `man -w ./$<` -T html > $@
 	groff -mandoc `man -w ./$<` -T html > $@
-	rsync -azxlSD --progress $@ root@www.clusterlabs.org:/var/www/html/man/
+	rsync $(RSYNC_OPTS) "$@" "$(RSYNC_DEST)/man/$(PACKAGE)/"
 
 doxygen: Doxyfile
 	doxygen Doxyfile
@@ -321,13 +314,11 @@ abi-www:
 	abi-check -u pacemaker $(LAST_RELEASE) $(TAG)
 
 www:	all global doxygen
-	find . -name "[a-z]*.8" -exec make \{\}.html \;
-	find . -name "[a-z]*.7" -exec make \{\}.html \;
+	find . -name "[a-z]*.[78]" -exec make \{\}.html \;
 	htags -sanhIT
-	rsync -avzxlSD --progress HTML/ root@www.clusterlabs.org:/var/www/html/global/$(PACKAGE)/$(TAG)
-	rsync -avzxlSD --progress doc/api/html/ root@www.clusterlabs.org:/var/www/html/doxygen/$(PACKAGE)/$(TAG)
-	make -C doc www
-	make coverity
+	rsync $(RSYNC_OPTS) HTML/ "$(RSYNC_DEST)/global/$(PACKAGE)/$(TAG)"
+	rsync $(RSYNC_OPTS) doc/api/html/ "$(RSYNC_DEST)/doxygen/$(PACKAGE)/$(TAG)"
+	make RSYNC_DEST=$(RSYNC_DEST) -C doc www
 
 summary:
 	@printf "\n* `date +"%a %b %d %Y"` `git config user.name` <`git config user.email`> $(NEXT_RELEASE)-1"
