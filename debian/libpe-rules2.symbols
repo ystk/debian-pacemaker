@@ -8,10 +8,14 @@ libpe_rules.so.2 libpe-rules2 #MINVER#
  find_expression_type@Base 1.0.10
  merge_weights@Base 1.0.10
  parse_xml_duration@Base 1.0.10
+ pe_expand_re_matches@Base 1.1.16~rc1
  pe_metadata@Base 1.0.10
  pe_opts@Base 1.0.10
  pe_pref@Base 1.0.10
  (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_rules@Base 1.1.9
+ pe_test_attr_expression_re@Base 1.1.16~rc1
+ pe_test_expression_re@Base 1.1.16~rc1
+ pe_test_rule_re@Base 1.1.16~rc1
  role2text@Base 1.0.10
  task2text@Base 1.0.10
  test_attr_expression@Base 1.0.10

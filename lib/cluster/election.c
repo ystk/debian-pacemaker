@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2004 Andrew Beekhof <andrew@beekhof.net>
+ * Copyright (C) 2004-2016 Andrew Beekhof <andrew@beekhof.net>
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ * This source code is licensed under the GNU Lesser General Public License
+ * version 2.1 or later (LGPLv2.1+) WITHOUT ANY WARRANTY.
  */
+
 #include <crm_internal.h>
 
 #include <sys/time.h>
@@ -200,14 +190,14 @@ crm_compare_age(struct timeval your_age)
         crm_debug("Win: %ld vs %ld (seconds)", (long)our_age.tv_sec, (long)your_age.tv_sec);
         return 1;
     } else if (our_age.tv_sec < your_age.tv_sec) {
-        crm_debug("Loose: %ld vs %ld (seconds)", (long)our_age.tv_sec, (long)your_age.tv_sec);
+        crm_debug("Lose: %ld vs %ld (seconds)", (long)our_age.tv_sec, (long)your_age.tv_sec);
         return -1;
     } else if (our_age.tv_usec > your_age.tv_usec) {
         crm_debug("Win: %ld.%ld vs %ld.%ld (usec)",
                   (long)our_age.tv_sec, (long)our_age.tv_usec, (long)your_age.tv_sec, (long)your_age.tv_usec);
         return 1;
     } else if (our_age.tv_usec < your_age.tv_usec) {
-        crm_debug("Loose: %ld.%ld vs %ld.%ld (usec)",
+        crm_debug("Lose: %ld.%ld vs %ld.%ld (usec)",
                   (long)our_age.tv_sec, (long)our_age.tv_usec, (long)your_age.tv_sec, (long)your_age.tv_usec);
         return -1;
     }
@@ -319,7 +309,7 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
     int log_level = LOG_INFO;
     gboolean use_born_on = FALSE;
     gboolean done = FALSE;
-    gboolean we_loose = FALSE;
+    gboolean we_lose = FALSE;
     const char *op = NULL;
     const char *from = NULL;
     const char *reason = "unknown";
@@ -370,12 +360,12 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
 
     if(can_win == FALSE) {
         reason = "Not eligible";
-        we_loose = TRUE;
+        we_lose = TRUE;
 
     } else if (our_node == NULL || crm_is_peer_active(our_node) == FALSE) {
         reason = "We are not part of the cluster";
         log_level = LOG_ERR;
-        we_loose = TRUE;
+        we_lose = TRUE;
 
     } else if (election_id != e->count && crm_str_eq(our_node->uuid, election_owner, TRUE)) {
         log_level = LOG_TRACE;
@@ -425,14 +415,14 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
 
         } else if (compare_version(your_version, CRM_FEATURE_SET) < 0) {
             reason = "Version";
-            we_loose = TRUE;
+            we_lose = TRUE;
 
         } else if (compare_version(your_version, CRM_FEATURE_SET) > 0) {
             reason = "Version";
 
         } else if (age < 0) {
             reason = "Uptime";
-            we_loose = TRUE;
+            we_lose = TRUE;
 
         } else if (age > 0) {
             reason = "Uptime";
@@ -440,18 +430,18 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
             /* TODO: Check for y(our) born < 0 */
         } else if (use_born_on && your_node->born < our_node->born) {
             reason = "Born";
-            we_loose = TRUE;
+            we_lose = TRUE;
 
         } else if (use_born_on && your_node->born > our_node->born) {
             reason = "Born";
 
         } else if (e->uname == NULL) {
             reason = "Unknown host name";
-            we_loose = TRUE;
+            we_lose = TRUE;
 
         } else if (strcasecmp(e->uname, from) > 0) {
             reason = "Host name";
-            we_loose = TRUE;
+            we_lose = TRUE;
 
         } else {
             reason = "Host name";
@@ -467,7 +457,7 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
         election_wins = 0;
         expires = tm_now + STORM_INTERVAL;
 
-    } else if (done == FALSE && we_loose == FALSE) {
+    } else if (done == FALSE && we_lose == FALSE) {
         int peers = 1 + g_hash_table_size(crm_peer_cache);
 
         /* If every node has to vote down every other node, thats N*(N-1) total elections
@@ -488,7 +478,7 @@ election_count_vote(election_t *e, xmlNode *vote, bool can_win)
                    election_id, e->count, election_owner, op, from, reason);
         return e->state;
 
-    } else if(we_loose == FALSE) {
+    } else if (we_lose == FALSE) {
         do_crm_log(log_level, "Election %d (owner: %s) pass: %s from %s (%s)",
                    election_id, election_owner, op, from, reason);
 

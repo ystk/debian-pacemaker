@@ -8,7 +8,7 @@ Subject: Enable redirecting /etc/init.d/$script calls to systemd
  2 files changed, 8 insertions(+)
 
 diff --git a/lrmd/pacemaker_remote.in b/lrmd/pacemaker_remote.in
-index 6f79fae..a12c28c 100644
+index 92fe125..a43107c 100644
 --- a/lrmd/pacemaker_remote.in
 +++ b/lrmd/pacemaker_remote.in
 @@ -20,6 +20,10 @@
@@ -23,7 +23,7 @@ index 6f79fae..a12c28c 100644
  prog="pacemaker_remoted"
  cman=0
 diff --git a/mcp/pacemaker.in b/mcp/pacemaker.in
-index c677322..85b0eca 100644
+index 0ff1ac1..7faff4c 100644
 --- a/mcp/pacemaker.in
 +++ b/mcp/pacemaker.in
 @@ -21,6 +21,10 @@

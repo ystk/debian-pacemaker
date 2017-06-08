@@ -1,0 +1,24 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@debian.org>
+Date: Sat, 24 Sep 2016 21:42:54 +0200
+Subject: Enable the subdir-objects Automake option
+
+This avoids the "possible forward-incompatibility" warning from Automake,
+but breaks without --disable-dependency-tracking.  May be an Automake bug.
+Not for upstream until this is sorted out.
+---
+ configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configure.ac b/configure.ac
+index 97af60d..a80005a 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -59,7 +59,7 @@ AC_ARG_WITH(pkg-name,
+     [ PACKAGE_NAME="$withval" ])
+ 
+ dnl Older distros may need: AM_INIT_AUTOMAKE($PACKAGE_NAME, $PACKAGE_VERSION)
+-AM_INIT_AUTOMAKE([foreign])
++AM_INIT_AUTOMAKE([foreign subdir-objects])
+ AC_DEFINE_UNQUOTED(PACEMAKER_VERSION, "$PACKAGE_VERSION", Current pacemaker version)
+ 
+ PACKAGE_SERIES=`echo $PACKAGE_VERSION | awk -F. '{ print $1"."$2 }'`

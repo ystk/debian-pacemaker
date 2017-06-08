@@ -1,4 +1,5 @@
 usr/lib/ocf/resource.d/.isolation
+usr/lib/ocf/resource.d/pacemaker/attribute
 usr/lib/ocf/resource.d/pacemaker/ClusterMon
 usr/lib/ocf/resource.d/pacemaker/Dummy
 usr/lib/ocf/resource.d/pacemaker/HealthCPU
@@ -8,6 +9,7 @@ usr/lib/ocf/resource.d/pacemaker/pingd
 usr/lib/ocf/resource.d/pacemaker/Stateful
 usr/lib/ocf/resource.d/pacemaker/SysInfo
 usr/lib/ocf/resource.d/pacemaker/SystemHealth
+usr/share/man/man7/ocf_pacemaker_attribute.7
 usr/share/man/man7/ocf_pacemaker_ClusterMon.7
 usr/share/man/man7/ocf_pacemaker_Dummy.7
 usr/share/man/man7/ocf_pacemaker_HealthCPU.7

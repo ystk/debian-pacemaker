@@ -7,7 +7,7 @@ Subject: Fix spelling: Negligable -> Negligible
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/crmd/throttle.c b/crmd/throttle.c
-index 9a49fbd..9392902 100644
+index ae371c6..ce330fe 100644
 --- a/crmd/throttle.c
 +++ b/crmd/throttle.c
 @@ -377,7 +377,7 @@ throttle_handle_load(float load, const char *desc, int cores)

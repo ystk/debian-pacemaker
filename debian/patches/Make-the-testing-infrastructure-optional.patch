@@ -14,30 +14,30 @@ https://github.com/ClusterLabs/pacemaker/pull/1149
  6 files changed, 15 insertions(+)
 
 diff --git a/Makefile.am b/Makefile.am
-index 3abcafd..d6b09f0 100644
+index 3834afb..b2d4de8 100644
 --- a/Makefile.am
 +++ b/Makefile.am
-@@ -30,6 +30,7 @@ doc_DATA = AUTHORS COPYING COPYING.LIB
- 
- ACLOCAL_AMFLAGS  = -I m4
+@@ -33,6 +33,7 @@ ACLOCAL_AMFLAGS  = -I m4
+ licensedir              = $(docdir)/licenses/
+ license_DATA            = $(wildcard licenses/*)
  
 +if ENABLE_TESTS
  # Test components
  SUBDIRS	+= cts
  
-@@ -41,6 +42,7 @@ test_DATA		= valgrind-pcmk.suppressions
+@@ -44,6 +45,7 @@ test_DATA		= valgrind-pcmk.suppressions
  noinst_PROGRAMS = scratch
  nodist_scratch_SOURCES	= scratch.c
  scratch_LDADD	= $(top_builddir)/lib/common/libcrmcommon.la -lm
 +endif
  
- core:
- 	@echo "Building only core components: $(CORE)"
+ scratch.c:
+ 	echo 'int main(void){}' >$@
 diff --git a/configure.ac b/configure.ac
-index 554a922..736e56a 100644
+index 9b2df7a..97af60d 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -329,6 +329,11 @@ AC_ARG_WITH(configdir,
+@@ -333,6 +333,11 @@ AC_ARG_WITH(configdir,
      [ CONFIGDIR="$withval" ]
  )
  
@@ -50,11 +50,11 @@ index 554a922..736e56a 100644
  dnl General Processing
  dnl ===============================================
 diff --git a/fencing/Makefile.am b/fencing/Makefile.am
-index 383c217..3d6bc95 100644
+index c53ead6..c680abe 100644
 --- a/fencing/Makefile.am
 +++ b/fencing/Makefile.am
-@@ -20,8 +20,10 @@ include $(top_srcdir)/Makefile.common
- SUBDIRS =
+@@ -18,8 +18,10 @@
+ include $(top_srcdir)/Makefile.common
  
  ## binary progs
 +if ENABLE_TESTS
@@ -65,11 +65,11 @@ index 383c217..3d6bc95 100644
  halibdir	= $(CRM_DAEMON_DIR)
  halib_PROGRAMS	= stonithd stonith-test
 diff --git a/lrmd/Makefile.am b/lrmd/Makefile.am
-index d61a20c..0798278 100644
+index 1d50e11..44a4fd9 100644
 --- a/lrmd/Makefile.am
 +++ b/lrmd/Makefile.am
-@@ -20,11 +20,13 @@ include $(top_srcdir)/Makefile.common
- lrmdlibdir	= $(CRM_DAEMON_DIR)
+@@ -19,11 +19,13 @@ include $(top_srcdir)/Makefile.common
+ lrmdlibdir		= $(CRM_DAEMON_DIR)
  lrmdlib_PROGRAMS	= lrmd lrmd_internal_ctl
  
 +if ENABLE_TESTS
@@ -80,13 +80,13 @@ index d61a20c..0798278 100644
  test_SCRIPTS		= regression.py
 +endif
  
- initdir		 = $(INITDIR)
- init_SCRIPTS	 = pacemaker_remote
+ initdir			= $(INITDIR)
+ init_SCRIPTS		= pacemaker_remote
 diff --git a/pengine/Makefile.am b/pengine/Makefile.am
-index 871e2ff..e86ed3e 100644
+index c81a737..d55e586 100644
 --- a/pengine/Makefile.am
 +++ b/pengine/Makefile.am
-@@ -21,6 +21,7 @@ AM_CPPFLAGS     += -I$(top_builddir) -I$(top_srcdir)
+@@ -21,6 +21,7 @@ AM_CPPFLAGS	+= -I$(top_builddir) -I$(top_srcdir)
  
  halibdir	= $(CRM_DAEMON_DIR)
  
@@ -103,17 +103,18 @@ index 871e2ff..e86ed3e 100644
  beekhof:
  	echo $(shell ls -1 test10/*.xml)
 diff --git a/tools/Makefile.am b/tools/Makefile.am
-index 555b1db..ba22cb6 100644
+index b0a2aff..59e6627 100644
 --- a/tools/Makefile.am
 +++ b/tools/Makefile.am
-@@ -41,9 +41,11 @@ EXTRA_DIST		= $(sbin_SCRIPTS)
+@@ -38,10 +38,12 @@ EXTRA_DIST		= $(sbin_SCRIPTS)
  sbin_PROGRAMS		= crm_simulate crmadmin cibadmin crm_node crm_attribute crm_resource crm_verify \
  			 crm_shadow attrd_updater crm_diff crm_mon iso8601 crm_ticket crm_error
  
 +if ENABLE_TESTS
  testdir			= $(datadir)/$(PACKAGE)/tests/cli
  test_SCRIPTS		= regression.sh
- test_DATA               = regression.dates.exp regression.tools.exp regression.acls.exp 
+ test_DATA               = regression.dates.exp regression.tools.exp regression.acls.exp \
+ 			  regression.validity.exp
 +endif
  
  if BUILD_HEARTBEAT_SUPPORT

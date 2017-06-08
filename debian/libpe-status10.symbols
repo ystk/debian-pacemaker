@@ -79,6 +79,7 @@ libpe_status.so.10 libpe-status10 #MINVER#
  parse_xml_duration@Base 1.1.14~rc4
  pe_can_fence@Base 1.1.14~rc4
  pe_dataset@Base 1.1.14~rc4
+ pe_expand_re_matches@Base 1.1.16~rc1
  pe_fence_node@Base 1.1.14~rc4
  pe_fence_op@Base 1.1.14~rc4
  pe_find_node@Base 1.1.14~rc4
@@ -92,6 +93,9 @@ libpe_status.so.10 libpe-status10 #MINVER#
  pe_pref@Base 1.1.14~rc4
  (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_rules@Base 1.1.14~rc4
  (arch=!powerpc !powerpcspe !ppc64 !ppc64el)pe_status@Base 1.1.14~rc4
+ pe_test_attr_expression_re@Base 1.1.16~rc1
+ pe_test_expression_re@Base 1.1.16~rc1
+ pe_test_rule_re@Base 1.1.16~rc1
  print_node@Base 1.1.14~rc4
  print_resource@Base 1.1.14~rc4
  print_rscs_brief@Base 1.1.14~rc4

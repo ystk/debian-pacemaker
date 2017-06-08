@@ -11,7 +11,6 @@ usr/sbin/crm_node
 usr/sbin/fence_legacy
 usr/sbin/fence_pcmk
 usr/sbin/pacemakerd
-usr/share/doc/pacemaker/AUTHORS
 usr/share/man/man7/ocf_pacemaker_controld.7
 usr/share/man/man7/ocf_pacemaker_o2cb.7
 usr/share/man/man7/ocf_pacemaker_remote.7

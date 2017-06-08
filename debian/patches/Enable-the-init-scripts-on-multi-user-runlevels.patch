@@ -11,7 +11,7 @@ installed daemons by default.
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/lrmd/pacemaker_remote.in b/lrmd/pacemaker_remote.in
-index a12c28c..a215337 100644
+index a43107c..d0277be 100644
 --- a/lrmd/pacemaker_remote.in
 +++ b/lrmd/pacemaker_remote.in
 @@ -14,8 +14,8 @@
@@ -26,7 +26,7 @@ index a12c28c..a215337 100644
  # Description:		Starts and stops the Pacemaker remote agent for non-cluster nodes
  ### END INIT INFO
 diff --git a/mcp/pacemaker.in b/mcp/pacemaker.in
-index 85b0eca..f8726b5 100644
+index 7faff4c..215edfd 100644
 --- a/mcp/pacemaker.in
 +++ b/mcp/pacemaker.in
 @@ -15,8 +15,8 @@

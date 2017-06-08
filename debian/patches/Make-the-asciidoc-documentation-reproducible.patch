@@ -7,10 +7,10 @@ Subject: Make the asciidoc documentation reproducible
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/doc/Makefile.am b/doc/Makefile.am
-index 9771293..2cf8f4e 100644
+index ceeb9f0..d81337e 100644
 --- a/doc/Makefile.am
 +++ b/doc/Makefile.am
-@@ -72,7 +72,7 @@ endif
+@@ -79,7 +79,7 @@ endif
  EXTRA_DIST	= $(docbook:%=%.xml)
  
  %.html: %.txt

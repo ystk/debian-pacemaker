@@ -73,6 +73,7 @@ libcrmcommon.so.3 libcrmcommon3 #MINVER#
  crm_element_value_int@Base 1.1.9
  crm_enable_blackbox@Base 1.1.9
  crm_enable_stderr@Base 1.1.9
+ crm_ends_with@Base 1.1.16~rc1
  crm_exit@Base 1.1.9
  crm_foreach_xpath_result@Base 1.1.14~rc4
  crm_generate_uuid@Base 1.1.9
@@ -80,6 +81,7 @@ libcrmcommon.so.3 libcrmcommon3 #MINVER#
  crm_get_msec@Base 1.1.9
  crm_get_option@Base 1.1.9
  crm_get_option_long@Base 1.1.9
+ crm_get_sbd_timeout@Base 1.1.16~rc1
  crm_gnutls_global_init@Base 1.1.12
  crm_help@Base 1.1.9
  crm_initiate_client_tls_handshake@Base 1.1.9
@@ -129,12 +131,15 @@ libcrmcommon.so.3 libcrmcommon3 #MINVER#
  crm_procfs_process_info@Base 1.1.14~rc4
  crm_read_contents@Base 1.1.13
  crm_read_pidfile@Base 1.1.13
+ crm_remote_accept@Base 1.1.16~rc1
  crm_remote_parse_buffer@Base 1.1.9
  crm_remote_ready@Base 1.1.9
  crm_remote_recv@Base 1.1.9
  crm_remote_send@Base 1.1.9
  crm_remote_tcp_connect@Base 1.1.9
  crm_remote_tcp_connect_async@Base 1.1.9
+ crm_schema_cleanup@Base 1.1.16~rc1
+ crm_schema_init@Base 1.1.16~rc1
  crm_set_options@Base 1.1.9
  crm_signal@Base 1.1.9
  crm_str_eq@Base 1.1.9

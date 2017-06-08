@@ -4,10 +4,8 @@ Enable-the-init-scripts-on-multi-user-runlevels.patch
 Make-the-asciidoc-documentation-reproducible.patch
 path_max.patch
 alerts-make-the-scripts-executable.patch
-Fix-typo-Substraction-Subtraction.patch
-Fix-typo-Ingor-e-ing-Ignor-e-ing.patch
-from-upstream/Reorder-definitions-to-make-omitting-tests-easier.patch
-from-upstream/Split-definitions-to-make-omitting-tests-easier.patch
 Make-the-testing-infrastructure-optional.patch
-from-upstream/High-libcrmcommon-fix-CVE-2016-7035-improper-IPC-gua.patch
 Fix-spelling-Negligable-Negligible.patch
+Enable-the-subdir-objects-Automake-option.patch
+crm_perror-appends-a-colon-to-its-fmt-argument.patch
+Don-t-report-error-if-the-output-file-isn-t-syncable.patch

@@ -1,0 +1,22 @@
+From: =?utf-8?q?Ferenc_W=C3=A1gner?= <wferi@debian.org>
+Date: Mon, 21 Nov 2016 15:25:31 +0100
+Subject: Don't report error if the output file isn't syncable
+
+---
+ lib/common/xml.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lib/common/xml.c b/lib/common/xml.c
+index 3bdc519..65237c8 100644
+--- a/lib/common/xml.c
++++ b/lib/common/xml.c
+@@ -3026,7 +3026,8 @@ write_xml_stream(xmlNode * xml_node, const char *filename, FILE * stream, gboole
+         res = -1;
+     }
+ 
+-    if (fsync(fileno(stream)) < 0) {
++    /* Don't report error if the file does not support synchronization */
++    if (fsync(fileno(stream)) < 0 && errno != EROFS  && errno != EINVAL) {
+         crm_perror(LOG_ERR, "fsync for %s failed", filename);
+         res = -1;
+     }

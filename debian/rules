@@ -37,12 +37,23 @@ override_dh_auto_build-indep:
 # with clang.  This takes a lot of time and does not help us at all.  Skip.
 override_dh_auto_test:
 
+empty_dir = debian/tmp/usr/share/doc/pacemaker/Pacemaker_Development/desktop/en-US/images
 override_dh_install:
 	rm -r	debian/tmp/usr/lib/*/lib*.la \
 		debian/tmp/usr/share/doc/pacemaker/COPYING \
-		debian/tmp/usr/share/doc/pacemaker/COPYING.LIB
+		debian/tmp/usr/share/doc/pacemaker/README.markdown \
+		debian/tmp/usr/share/doc/pacemaker/licenses
+	# If anything ever appears in this directory, add it to doc-base
+	# (it's installed in indep builds only).
+	if [ -d "$(empty_dir)" ]; then \
+	    rm $(empty_dir)/.keep; \
+	    rmdir $(empty_dir); \
+	fi
 	dh_install --fail-missing
 	debian/check_header_deps pacemaker
+
+override_dh_installdocs:
+	dh_installdocs -A README.markdown
 
 override_dh_installchangelogs:
 	dh_installchangelogs ChangeLog

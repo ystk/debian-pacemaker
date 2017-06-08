@@ -1,3 +1,50 @@
+pacemaker (1.1.16-1~bpo8+1) jessie-backports; urgency=medium
+
+  * Rebuild for jessie-backports.
+
+ -- Christoph Berg <christoph.berg@credativ.de>  Wed, 07 Jun 2017 11:47:29 +0200
+
+pacemaker (1.1.16-1) unstable; urgency=medium
+
+  * [d90daf5] Refresh our patches
+  * [971ea08] Cherry pick two small fixes from upstream
+    - crm_perror appends a colon to its fmt argument
+    - Don't report error if the output file isn't syncable
+  * Upload to unstable
+
+ -- Ferenc Wágner <wferi@debian.org>  Thu, 01 Dec 2016 14:15:23 +0100
+
+pacemaker (1.1.16~rc2-1) experimental; urgency=medium
+
+  * [21f8ee8] Delete upstreamed patch, refresh the rest
+
+ -- Ferenc Wágner <wferi@debian.org>  Sat, 19 Nov 2016 10:06:07 +0100
+
+pacemaker (1.1.16~rc1-2) experimental; urgency=medium
+
+  * [ce976f5] Arch builds don't install the empty documentation directory
+
+ -- Ferenc Wágner <wferi@debian.org>  Tue, 08 Nov 2016 15:55:41 +0100
+
+pacemaker (1.1.16~rc1-1) experimental; urgency=medium
+
+  * [9067691] New upstream release candidate (1.1.16~rc1)
+  * [da2886c] Remove upstreamed patches, refresh the rest
+  * [c1e19e1] New patch Fix-shell-syntax.patch.
+    Fix shell syntax.  Upstream will fix this soon.
+  * [d76e150] New patch Enable-the-subdir-objects-Automake-option.patch.
+    Enable the subdir-objects Automake option
+  * [da902b7] Update copyright according to f01f734
+  * [ab25e04] Follow upstream doc overhaul (6b1d65b)
+  * [17c4e5a] Ship the attribute resource agent and its manual
+  * [b5a3280] Update symbols files.
+    The removed unpack_rsc_location symbol was not part of the API.
+  * [2014b63] Ship the Pacemaker Development document
+  * [12e6471] fence_pcmk and fence_legacy need Perl
+  * [2f10e09] Don't ship the placeholder file with the documentation
+
+ -- Ferenc Wágner <wferi@debian.org>  Tue, 08 Nov 2016 13:22:21 +0100
+
 pacemaker (1.1.15-3~bpo8+1) jessie-backports; urgency=medium
 
   * Rebuild for jessie-backports.
